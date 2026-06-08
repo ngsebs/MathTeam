@@ -1,0 +1,167 @@
+# PENTeam Quick Start Guide
+
+## How to Submit a Project to the Math Research Team
+
+### Step 1: Create Your Project Description
+
+Create a markdown file in the `input/` directory with your mathematical problem:
+
+```bash
+# Example: Create a prime numbers investigation
+cat > PENTeam/input/prime-investigation.md << 'EOF'
+# Prime Numbers Investigation
+
+**Project Title**: Prime Number Distribution Analysis
+
+**Problem Statement**: 
+Investigate the distribution patterns of prime numbers and explore
+the validity of the Goldbach conjecture for even numbers up to 10000.
+
+**Background/Context**:
+Prime numbers are the building blocks of arithmetic. The Goldbach 
+conjecture states that every even number greater than 2 is the sum 
+of two primes - unproven but verified up to very large numbers.
+
+**Goals/Objectives**:
+- Implement efficient prime number generation algorithm
+- Visualize prime distribution patterns
+- Test Goldbach conjecture for numbers up to 10000
+- Generate statistical analysis of prime gaps
+
+**Scope**:
+- Focus on computational verification rather than proofs
+- Use Sieve of Eratosthenes for prime generation
+- Generate plots and statistics in output
+
+**Success Criteria**:
+- Working prime generator that handles numbers up to 1,000,000
+- Complete verification of Goldbach conjecture for even numbers ≤ 10000
+- Statistical summary of prime distribution
+- All tests passing
+
+**Priority**: High
+EOF
+```
+
+### Step 2: Start the Docker Container
+
+```bash
+cd PENTeam/docker
+
+# Build the image (first time only)
+./build.sh
+
+# Start the container
+./run.sh
+```
+
+### Step 3: Inside the Container
+
+The Supervisor agent automatically monitors the `input/` directory:
+
+```bash
+# Once inside the container, check for new projects
+ls /app/input/
+
+# The Supervisor will:
+# 1. Detect new files in /app/input/
+# 2. Create project structure in /app/output/[project-name]/
+# 3. Initialize communication thread
+# 4. Begin investigation pipeline
+```
+
+### Step 4: Monitor Progress
+
+```bash
+# Check communication threads
+ls /app/communication/threads/
+
+# Check pending decisions (requires your approval)
+ls /app/decisions/pending/
+
+# View current work
+ls /app/output/
+
+# Check team progress
+cat /app/communication/threads/[project]/progress.md
+```
+
+### Step 5: Make Decisions
+
+When the team needs your input:
+
+```bash
+# Review pending decisions
+ls /app/decisions/pending/
+
+# Approve or reject
+mv /app/decisions/pending/[project]/[decision].md /app/decisions/approved/
+# OR
+mv /app/decisions/pending/[project]/[decision].md /app/decisions/rejected/
+```
+
+## Project Lifecycle
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
+│  /app/input │────►│  Supervisor  │────►│  /app/output/   │
+│  (Your file)│     │  (Detects &  │     │  (Investigation │
+│             │     │   plans)     │     │   results)      │
+└─────────────┘     └──────────────┘     └─────────────────┘
+                            │
+         ┌─────────────────┼─────────────────┐
+         │                 │                 │
+         ▼                 ▼                 ▼
+┌──────────────┐  ┌────────────────┐  ┌──────────────┐
+│   Creative   │  │     Senior     │  │    Python    │
+│  Mathematician│  │  Mathematician │  │    Coder     │
+│  (Theorems)  │  │   (Reviews)    │  │  (Implements)│
+└──────────────┘  └────────────────┘  └──────────────┘
+                                                 │
+                                                 ▼
+                                         ┌──────────────┐
+                                         │    Tester    │
+                                         │  (Validates) │
+                                         └──────────────┘
+```
+
+## Directory Reference
+
+| Directory | Purpose | Your Action |
+|-----------|---------|-------------|
+| `/app/input/` | Submit projects here | Add .md files |
+| `/app/output/` | View results | Read summaries |
+| `/app/communication/` | Team discussions | Monitor threads |
+| `/app/decisions/pending/` | Needs your approval | Review and decide |
+| `/app/decisions/approved/` | Approved decisions | View only |
+| `/app/decisions/rejected/` | Rejected proposals | View only |
+
+## Example Workflow
+
+```bash
+# 1. Submit a project
+echo "# My Math Project" > /app/input/my-project.md
+
+# 2. Supervisor detects it, creates output structure:
+#    /app/output/my-project/
+#    ├── summary.md
+#    ├── theorems/
+#    ├── implementation/
+#    ├── tests/
+#    └── review/
+
+# 3. Team works through phases:
+#    - Creative Mathematician: proposes theorems
+#    - Senior Mathematician: reviews
+#    - Python Coder: implements
+#    - Tester: validates
+
+# 4. You approve final results
+```
+
+## Tips
+
+- **Be specific** in your project description
+- **Set clear success criteria** - the team works toward measurable goals
+- **Check decisions/pending** regularly for items needing your input
+- **All results** appear in `/app/output/[project-name]/`
