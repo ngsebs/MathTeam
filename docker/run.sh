@@ -1,6 +1,7 @@
 #!/bin/bash
 # Run the PENTeam mathematical research team in Docker
 # Agents run inside container, Ollama runs on macOS host
+# Uses host network mode to access Ollama at localhost:11434
 
 set -e
 
@@ -28,12 +29,13 @@ echo "  PENTeam Math Research Team"
 echo "=========================================="
 echo ""
 echo "Platform: macOS (Host) + Docker Container"
-echo "Ollama Host: ${OLLAMA_HOST:-host.docker.internal:11434}"
+echo "Network Mode: host (direct localhost access)"
+echo "Ollama Host: ${OLLAMA_HOST:-localhost:11434}"
 echo "Python Environment: /app/.venv (auto-activated)"
 echo ""
 
 # Check Ollama availability on macOS host
-OLLAMA_URL="http://${OLLAMA_HOST:-host.docker.internal:11434}/api/tags"
+OLLAMA_URL="http://${OLLAMA_HOST:-localhost:11434}/api/tags"
 if curl -s --max-time 3 "$OLLAMA_URL" > /dev/null 2>&1; then
     echo "✓ Ollama is accessible at $OLLAMA_URL"
     echo "  Available models:"
@@ -57,12 +59,14 @@ echo "  Python Coder:     ${PYTHON_CODER_MODEL:-codellama:7b}"
 echo "  Tester:          ${TESTER_MODEL:-llama3.2:3b}"
 echo ""
 
-# Run the container
+# Run the container with host network mode
+# This allows direct access to localhost:11434 where Ollama runs on the host
 docker run \
     --rm \
     -it \
     --name pent-eam-math-team \
     --hostname pent-eam-math-team \
+    --network host \
     -v "$PROJECT_ROOT/AI:/app/AI:ro" \
     -v "$PROJECT_ROOT/input:/app/input:rw" \
     -v "$PROJECT_ROOT/output:/app/output:rw" \
@@ -76,15 +80,13 @@ docker run \
     -v "$PROJECT_ROOT/requirements.txt:/app/requirements.txt:ro" \
     -v ~/.openhands:/root/.openhands \
     -w /app \
-    --add-host=host.docker.internal:host-gateway \
-    -p 3000:3000 \
+    -e OLLAMA_HOST=localhost:11434 \
+    -e OLLAMA_BASE_URL=http://localhost:11434 \
     ${SUPERVISOR_MODEL:+-e SUPERVISOR_MODEL="$SUPERVISOR_MODEL"} \
     ${CREATIVE_MATH_MODEL:+-e CREATIVE_MATH_MODEL="$CREATIVE_MATH_MODEL"} \
     ${SENIOR_MATH_MODEL:+-e SENIOR_MATH_MODEL="$SENIOR_MATH_MODEL"} \
     ${PYTHON_CODER_MODEL:+-e PYTHON_CODER_MODEL="$PYTHON_CODER_MODEL"} \
     ${TESTER_MODEL:+-e TESTER_MODEL="$TESTER_MODEL"} \
-    ${OLLAMA_HOST:+-e OLLAMA_HOST="$OLLAMA_HOST"} \
-    ${OLLAMA_BASE_URL:+-e OLLAMA_BASE_URL="$OLLAMA_BASE_URL"} \
     ${LLM_API_KEY:+-e LLM_API_KEY="$LLM_API_KEY"} \
     ${LLM_MODEL:+-e LLM_MODEL="$LLM_MODEL"} \
     ${LLM_BASE_URL:+-e LLM_BASE_URL="$LLM_BASE_URL"} \

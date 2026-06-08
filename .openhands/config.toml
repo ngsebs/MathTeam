@@ -29,9 +29,9 @@ LOG_FILE=/root/.openhands/logs/openhands.log
 
 ## Ollama Configuration (Running on macOS Host)
 
-# Ollama API endpoint - macOS host accessible via host.docker.internal
-OLLAMA_HOST=host.docker.internal:11434
-OLLAMA_BASE_URL=http://host.docker.internal:11434
+# Ollama API endpoint - use localhost with host network mode
+OLLAMA_HOST=localhost:11434
+OLLAMA_BASE_URL=http://localhost:11434
 
 # Ollama API timeout (seconds)
 OLLAMA_TIMEOUT=120

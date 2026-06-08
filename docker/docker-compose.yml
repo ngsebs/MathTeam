@@ -6,6 +6,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: pent-eam-math-team
+    # Use host network mode for macOS to access Ollama on localhost
+    network_mode: host
     volumes:
       # Agent definitions (read-only)
       - ../AI:/app/AI:ro
@@ -25,9 +27,9 @@ services:
       - ~/.openhands:/root/.openhands
     environment:
       # Ollama Configuration (running on macOS host)
-      # Container accesses Ollama via host.docker.internal
-      - OLLAMA_HOST=${OLLAMA_HOST:-host.docker.internal:11434}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # Network mode: host allows direct access to localhost:11434
+      - OLLAMA_HOST=localhost:11434
+      - OLLAMA_BASE_URL=http://localhost:11434
       # Agent-specific models (lightweight local models)
       - SUPERVISOR_MODEL=${SUPERVISOR_MODEL:-llama3.2:3b}
       - CREATIVE_MATH_MODEL=${CREATIVE_MATH_MODEL:-llama3.2:3b}
@@ -41,16 +43,14 @@ services:
       # Python virtual environment
       - VIRTUAL_ENV=/app/.venv
       - PATH=/app/.venv/bin:$PATH
-    # Default bridge network with host.docker.internal for Ollama access
     stdin_open: true
     tty: true
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     ports:
+      # OpenHands API
       - "3000:3000"
 
 networks:
   default:
-    name: pent-eam-net
-    driver: bridge
+    external: true
+    name: host
