@@ -3,13 +3,17 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install \
+# Use --no-install-recommends to minimize image size
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     git \
     curl \
     wget \
     jq \
-    vim \
-    && rm -rf /var/lib/apt/lists/*
+    vim-tiny \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy project files
 COPY . /app
