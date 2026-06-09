@@ -5,11 +5,12 @@
 set -e
 
 # Configuration
-INPUT_DIR="/app/input"
-OUTPUT_DIR="/app/output"
-COMM_DIR="/app/communication/threads"
-DEC_DIR="/app/decisions/pending"
+INPUT_DIR="${INPUT_DIR:-/app/input}"
+OUTPUT_DIR="${OUTPUT_DIR:-/app/output}"
+COMM_DIR="${COMM_DIR:-/app/communication/threads}"
+DEC_DIR="${DEC_DIR:-/app/decisions/pending}"
 LOG_FILE="/app/communication/supervisor.log"
+OLLAMA_HOST="${OLLAMA_HOST:-localhost:11434}"
 
 # Colors
 RED='\033[0;31m'
@@ -34,9 +35,28 @@ log_error() {
     log "${RED}[ERROR]${NC} $1"
 }
 
-# Check Ollama availability
+# Check Ollama availability with retries
 check_ollama() {
-    curl -s --max-time 5 "http://localhost:11434/api/tags" > /dev/null 2>&1
+    local max_attempts=5
+    local attempt=1
+    local retry_delay=3
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -s --max-time 5 "http://${OLLAMA_HOST}/api/tags" > /dev/null 2>&1; then
+            return 0
+        fi
+        
+        if [ $attempt -lt $max_attempts ]; then
+            log_warn "Ollama not responding (attempt $attempt/$max_attempts), retrying in ${retry_delay}s..."
+            sleep $retry_delay
+            ((attempt++))
+        else
+            log_warn "Ollama not available at ${OLLAMA_HOST} after $max_attempts attempts"
+            return 1
+        fi
+    done
+    
+    return 1
 }
 
 # Initialize directory structure
@@ -44,6 +64,7 @@ init_directories() {
     log_info "Initializing PENTeam directories..."
     
     mkdir -p "$INPUT_DIR"
+    mkdir -p "$INPUT_DIR/processed"
     mkdir -p "$OUTPUT_DIR"
     mkdir -p "$COMM_DIR"
     mkdir -p "$DEC_DIR/approved"
@@ -132,7 +153,6 @@ EOF
     log_info "Communication thread initialized at $COMM_DIR/$project_name"
     
     # Move processed file to archive
-    mkdir -p "$INPUT_DIR/processed"
     mv "$project_file" "$INPUT_DIR/processed/${project_name}_$(date +%s).md"
     
     return 0
@@ -159,10 +179,10 @@ show_status() {
     echo ""
     
     # Ollama status
-    if check_ollama; then
-        echo -e "  ${GREEN}✓${NC} Ollama: Running at localhost:11434"
+    if curl -s --max-time 3 "http://${OLLAMA_HOST}/api/tags" > /dev/null 2>&1; then
+        echo -e "  ${GREEN}✓${NC} Ollama: Running at ${OLLAMA_HOST}"
     else
-        echo -e "  ${RED}✗${NC} Ollama: Not available"
+        echo -e "  ${RED}✗${NC} Ollama: Not available (will retry)"
     fi
     
     # Input queue
@@ -187,14 +207,13 @@ run_supervisor() {
     # Initialize directories
     init_directories
     
-    # Check Ollama before starting
+    # Check Ollama - continue even if not available (will retry)
     if ! check_ollama; then
-        log_error "Ollama not available at localhost:11434"
-        log_error "Please start Ollama: ollama serve"
-        exit 1
+        log_warn "Ollama not available - will continue monitoring and retry"
+    else
+        log_info "Ollama connection verified"
     fi
     
-    log_info "Ollama connection verified"
     log_info "Supervisor ready - monitoring $INPUT_DIR"
     
     # Initial check for any existing projects
@@ -206,6 +225,12 @@ run_supervisor() {
         
         # Check for new projects every 10 seconds
         check_new_projects
+        
+        # Periodic Ollama health check (every 5 minutes)
+        if ! curl -s --max-time 3 "http://${OLLAMA_HOST}/api/tags" > /dev/null 2>&1; then
+            log_warn "Ollama connection lost, retrying..."
+            check_ollama
+        fi
         
         sleep 10
     done
@@ -250,6 +275,7 @@ case "${1:-start}" in
             log_error "Please specify a project file"
             exit 1
         fi
+        init_directories
         process_project "$2"
         ;;
     monitor)

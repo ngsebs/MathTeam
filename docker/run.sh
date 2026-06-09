@@ -34,19 +34,47 @@ echo "Ollama Host: ${OLLAMA_HOST:-localhost:11434}"
 echo "Python Environment: /app/.venv (auto-activated)"
 echo ""
 
-# Check Ollama availability on macOS host
-OLLAMA_URL="http://${OLLAMA_HOST:-localhost:11434}/api/tags"
-if curl -s --max-time 3 "$OLLAMA_URL" > /dev/null 2>&1; then
+# Check Ollama availability on macOS host (with retries)
+echo "Checking Ollama availability..."
+OLLAMA_URL="http://localhost:11434/api/tags"
+MAX_RETRIES=3
+RETRY_DELAY=2
+ollama_available=false
+
+for i in $(seq 1 $MAX_RETRIES); do
+    echo "  Attempt $i/$MAX_RETRIES..."
+    if curl -s --max-time 5 "$OLLAMA_URL" > /dev/null 2>&1; then
+        ollama_available=true
+        break
+    fi
+    if [ $i -lt $MAX_RETRIES ]; then
+        echo "  Retrying in ${RETRY_DELAY}s..."
+        sleep $RETRY_DELAY
+    fi
+done
+
+if [ "$ollama_available" = true ]; then
+    echo ""
     echo "✓ Ollama is accessible at $OLLAMA_URL"
     echo "  Available models:"
-    curl -s "$OLLAMA_URL" | jq -r '.models[] | "    - \(.name)"' 2>/dev/null || echo "    (run 'ollama list' on host to see models)"
+    MODELS=$(curl -s "$OLLAMA_URL" 2>/dev/null | jq -r '.models[] | .name' 2>/dev/null || echo "")
+    if [ -n "$MODELS" ]; then
+        echo "$MODELS" | while read -r model; do
+            [ -n "$model" ] && echo "    - $model"
+        done
+    else
+        echo "    (no models found - pull with: ollama pull llama3.2:3b)"
+    fi
 else
+    echo ""
     echo "⚠ Ollama not detected at $OLLAMA_URL"
     echo ""
-    echo "  On macOS host, run:"
+    echo "  The container will still start and retry Ollama connection."
+    echo "  To fix this, on macOS host run:"
     echo "    1. ollama serve"
     echo "    2. ollama pull llama3.2:3b"
-    echo "    3. ollama pull codellama:7b"
+    echo ""
+    echo "  Waiting for Ollama to become available..."
 fi
 echo ""
 
@@ -87,6 +115,7 @@ esac
 
 # Run the container with host network mode
 # This allows direct access to localhost:11434 where Ollama runs on the host
+echo "Starting Docker container..."
 docker run \
     --rm \
     -it \
