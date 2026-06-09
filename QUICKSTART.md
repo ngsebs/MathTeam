@@ -165,3 +165,47 @@ echo "# My Math Project" > /app/input/my-project.md
 - **Set clear success criteria** - the team works toward measurable goals
 - **Check decisions/pending** regularly for items needing your input
 - **All results** appear in `/app/output/[project-name]/`
+
+## Troubleshooting
+
+### Debug Commands
+
+```bash
+# Run inside container (./run.sh interactive)
+source /app/.venv/bin/activate
+
+# Full system diagnostic
+/app/docker/debug.sh
+
+# Run OpenHands agent
+/app/docker/openhands.sh
+
+# Check Ollama status
+curl http://localhost:11434/api/tags
+
+# View supervisor logs
+cat /app/communication/supervisor.log
+
+# Manual supervisor start
+/app/docker/supervisor.sh start
+
+# Team status dashboard
+/app/docker/monitor.sh
+```
+
+### Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `openhands: command not found` | Use `python -m openhands` or `/app/docker/openhands.sh` |
+| Ollama connection refused | Ensure Ollama is running on host: `ollama serve` |
+| Supervisor not starting | Check logs: `cat /app/communication/supervisor.log` |
+| Import errors | Activate venv: `source /app/.venv/bin/activate` |
+
+### Run Modes
+
+```bash
+./run.sh              # Start supervisor (monitors input/)
+./run.sh interactive  # Bash shell
+./run.sh monitor      # Status dashboard
+```

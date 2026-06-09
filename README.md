@@ -116,14 +116,39 @@ ls output/
 ```bash
 cd docker
 
-# Build image
+# Build image (first time only)
 ./build.sh
 
-# Run team
+# Run team (starts supervisor - monitors input/)
 ./run.sh
+
+# Run in interactive mode (bash shell)
+./run.sh interactive
+
+# Run monitoring dashboard
+./run.sh monitor
 
 # In another terminal, monitor logs
 docker logs -f pent-eam-math-team
+```
+
+### Inside the Container
+
+```bash
+# Activate virtual environment
+source /app/.venv/bin/activate
+
+# Run debug analysis
+/app/docker/debug.sh
+
+# Run OpenHands agent
+/app/docker/openhands.sh
+
+# Run supervisor manually
+/app/docker/supervisor.sh start
+
+# Check team status
+/app/docker/monitor.sh
 ```
 
 ### Or using Docker Compose

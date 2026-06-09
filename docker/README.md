@@ -76,10 +76,38 @@ cd docker && ./build.sh
 | `Dockerfile` | Container image with Python venv |
 | `docker-compose.yml` | Multi-service orchestration |
 | `build.sh` | Build the Docker image |
-| `run.sh` | Start container with Ollama connectivity |
+| `run.sh` | Start container with supervisor (monitors input/) |
 | `stop.sh` | Stop and remove container |
+| `supervisor.sh` | Project intake and task distribution |
+| `monitor.sh` | Team status dashboard |
+| `debug.sh` | System diagnostic and troubleshooting |
+| `openhands.sh` | OpenHands agent runner |
 | `python-env.sh` | Python environment helper script |
 | `README.md` | This documentation |
+
+## Run Modes
+
+The `run.sh` script supports different modes:
+
+```bash
+./run.sh              # Start supervisor (monitors input/)
+./run.sh interactive  # Bash shell for manual commands
+./run.sh monitor      # Status dashboard
+```
+
+## Docker Scripts
+
+### supervisor.sh
+Automatically monitors `/app/input/` for new project files and initiates investigation.
+
+### monitor.sh
+Shows team status: Ollama, agents, projects, decisions, system resources.
+
+### debug.sh
+Comprehensive diagnostic tool for troubleshooting issues.
+
+### openhands.sh
+Wrapper script to run OpenHands agent via Python module.
 
 ## Python Virtual Environment
 
@@ -112,19 +140,20 @@ source /app/.venv/bin/activate
 ## How Ollama Connectivity Works (macOS)
 
 1. **Ollama runs on host**: `ollama serve` listens on `localhost:11434`
-2. **Docker accesses host**: Container uses `host.docker.internal:11434`
-3. **extra_hosts**: Docker Desktop on macOS provides this hostname automatically
+2. **Docker uses host network mode**: Container accesses `localhost:11434` directly
+3. **No extra_hosts needed**: Host network mode provides direct localhost access
 
 ### Connection Details
 
 | Component | URL |
 |-----------|-----|
 | Ollama on Host | `http://localhost:11434` |
-| Ollama from Container | `http://host.docker.internal:11434` |
+| Ollama from Container | `http://localhost:11434` (via host network) |
 
 The `run.sh` script automatically:
-- Adds `host.docker.internal` to `/etc/hosts` in container
-- Sets `OLLAMA_HOST=host.docker.internal:11434`
+- Uses `--network host` flag for direct localhost access
+- Sets `OLLAMA_HOST=localhost:11434`
+- Retries connection if Ollama not immediately available
 - Verifies Ollama connectivity on startup |
 
 ## Ollama Configuration (Local Models)
@@ -146,9 +175,9 @@ PENTeam supports local LLM inference via Ollama. Each agent can use a different 
 Set these in a `.env` file or export before running:
 
 ```bash
-# Ollama Configuration
-OLLAMA_HOST=host.docker.internal:11434
-OLLAMA_BASE_URL=http://host.docker.internal:11434
+# Ollama Configuration (container uses host network mode)
+OLLAMA_HOST=localhost:11434
+OLLAMA_BASE_URL=http://localhost:11434
 
 # Agent-specific models (override defaults)
 SUPERVISOR_MODEL=llama3.2:3b
@@ -273,18 +302,53 @@ curl http://localhost:11434/api/tags
 # 3. Check Docker Desktop is running
 #    Menu Bar → Docker Desktop icon should be visible
 
-# 4. Verify host.docker.internal resolution in container
-docker run --rm alpine cat /etc/hosts | grep host.docker.internal
+# 4. Verify host network mode is enabled in Docker Desktop
+#    Docker Desktop → Settings → General → ✓ Use Docker VMM
+
+# 5. Test localhost access in container
+docker run --rm --network host alpine sh -c "curl http://localhost:11434/api/tags"
 ```
 
 ### Container network issues
 
 ```bash
-# Do NOT use network_mode: host on macOS - it's Linux-only
-# The default bridge network works correctly
+# Host network mode is used for direct localhost access
+# This works on both macOS and Linux with Docker Desktop
 
-# If you have issues, check Docker Desktop networking:
-# Docker Desktop → Settings → Resources → Network
+# If you have issues, check:
+# 1. Docker Desktop networking settings
+# 2. No port 11434 conflicts
+# 3. Ollama is actually listening on localhost
+```
+
+### Supervisor not starting
+
+```bash
+# Enter container interactively
+./run.sh interactive
+
+# Run debug script
+/app/docker/debug.sh
+
+# Check supervisor logs
+cat /app/communication/supervisor.log
+
+# Restart supervisor manually
+/app/docker/supervisor.sh start
+```
+
+### OpenHands command not found
+
+```bash
+# Use Python module instead of CLI
+source /app/.venv/bin/activate
+python -m openhands
+
+# Or use the wrapper script
+/app/docker/openhands.sh
+
+# Check if openhands is installed
+pip list | grep openhands
 ```
 
 ### Model download issues (on host)
