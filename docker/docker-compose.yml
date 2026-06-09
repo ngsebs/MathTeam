@@ -27,9 +27,8 @@ services:
       - ~/.openhands:/root/.openhands
     environment:
       # Ollama Configuration (running on macOS host)
-      # Network mode: host allows direct access to localhost:11434
-      - OLLAMA_HOST=localhost:11434
-      - OLLAMA_BASE_URL=http://localhost:11434
+      - OLLAMA_HOST=host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # Agent-specific models (lightweight local models)
       - SUPERVISOR_MODEL=${SUPERVISOR_MODEL:-llama3.2:3b}
       - CREATIVE_MATH_MODEL=${CREATIVE_MATH_MODEL:-llama3.2:3b}

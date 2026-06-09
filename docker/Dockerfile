@@ -40,9 +40,9 @@ ENV PYTHONPATH=/app
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Ollama configuration (connects to host via localhost with host network mode)
-ENV OLLAMA_HOST=localhost:11434
-ENV OLLAMA_BASE_URL=http://localhost:11434
+# Ollama configuration (connects to host via host.docker.internal on macOS)
+ENV OLLAMA_HOST=host.docker.internal:11434
+ENV OLLAMA_BASE_URL=http://host.docker.internal:11434
 
 # Directory environment variables
 ENV INPUT_DIR=/app/input
