@@ -59,6 +59,32 @@ echo "  Python Coder:     ${PYTHON_CODER_MODEL:-codellama:7b}"
 echo "  Tester:          ${TESTER_MODEL:-llama3.2:3b}"
 echo ""
 
+# Parse command line arguments
+MODE="${1:-supervisor}"
+
+case "$MODE" in
+    supervisor)
+        echo "Starting Supervisor mode (monitors input directory)..."
+        echo ""
+        COMMAND="/app/docker/supervisor.sh start"
+        ;;
+    interactive)
+        echo "Starting Interactive mode..."
+        echo ""
+        COMMAND="/bin/bash"
+        ;;
+    monitor)
+        echo "Starting Monitor mode..."
+        echo ""
+        COMMAND="/app/docker/monitor.sh"
+        ;;
+    *)
+        echo "Unknown mode: $MODE"
+        echo "Usage: $0 [supervisor|interactive|monitor]"
+        exit 1
+        ;;
+esac
+
 # Run the container with host network mode
 # This allows direct access to localhost:11434 where Ollama runs on the host
 docker run \
@@ -78,6 +104,7 @@ docker run \
     -v "$PROJECT_ROOT/.cursorrules:/app/.cursorrules:ro" \
     -v "$PROJECT_ROOT/AGENTS.md:/app/AGENTS.md:ro" \
     -v "$PROJECT_ROOT/requirements.txt:/app/requirements.txt:ro" \
+    -v "$SCRIPT_DIR:/app/docker:ro" \
     -v ~/.openhands:/root/.openhands \
     -w /app \
     -e OLLAMA_HOST=localhost:11434 \
@@ -90,4 +117,4 @@ docker run \
     ${LLM_API_KEY:+-e LLM_API_KEY="$LLM_API_KEY"} \
     ${LLM_MODEL:+-e LLM_MODEL="$LLM_MODEL"} \
     ${LLM_BASE_URL:+-e LLM_BASE_URL="$LLM_BASE_URL"} \
-    pent-eam-math-team:latest
+    pent-eam-math-team:latest $COMMAND

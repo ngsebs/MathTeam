@@ -44,5 +44,11 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV OLLAMA_HOST=localhost:11434
 ENV OLLAMA_BASE_URL=http://localhost:11434
 
-# Default command - activates venv automatically
-CMD ["/bin/bash"]
+# Directory environment variables
+ENV INPUT_DIR=/app/input
+ENV OUTPUT_DIR=/app/output
+ENV COMMUNICATION_DIR=/app/communication
+ENV DECISIONS_DIR=/app/decisions
+
+# Default command - start supervisor to monitor input directory
+CMD ["/bin/bash", "-c", "/app/docker/supervisor.sh start"]
