@@ -130,6 +130,12 @@ case "$MODE" in
         ;;
 esac
 
+# Check if image exists, build if needed
+if ! docker image inspect pent-eam-math-team:latest >/dev/null 2>&1; then
+    echo "Docker image not found. Building..."
+    "$SCRIPT_DIR/build.sh"
+fi
+
 # Run the container with host network mode
 # In host network mode on macOS, use host.docker.internal to reach the host
 echo "Starting Docker container..."
