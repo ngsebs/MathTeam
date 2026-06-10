@@ -105,6 +105,17 @@ echo ""
 echo -e "${CYAN}Enter your name (for the record):${NC}"
 read -r approver_name
 
+# Optional notes/reasoning
+echo ""
+echo -e "${CYAN}Enter optional notes or reasoning (press Enter to skip):${NC}"
+read -r approver_notes
+
+# Custom prompt for continuation (Option A only)
+echo ""
+echo -e "${CYAN}Enter optional custom instructions for continuation project (press Enter to skip):${NC}"
+echo -e "${YELLOW}This will be added to the next investigation project.${NC}"
+read -r custom_prompt
+
 # Add decision to the file
 echo "" >> "$decision_file"
 echo "---" >> "$decision_file"
@@ -117,6 +128,14 @@ echo "**Rationale**: $desc" >> "$decision_file"
 echo "" >> "$decision_file"
 echo "**Approved By**: $approver_name" >> "$decision_file"
 echo "" >> "$decision_file"
+if [ -n "$approver_notes" ]; then
+    echo "**Notes**: $approver_notes" >> "$decision_file"
+    echo "" >> "$decision_file"
+fi
+if [ -n "$custom_prompt" ]; then
+    echo "**Custom Prompt**: $custom_prompt" >> "$decision_file"
+    echo "" >> "$decision_file"
+fi
 echo "**Date**: $(date '+%Y-%m-%d %H:%M:%S')" >> "$decision_file"
 
 # Move to approved directory
@@ -127,5 +146,8 @@ echo ""
 echo -e "${GREEN}✓ Decision recorded and saved!${NC}"
 echo "Decision: Option $decision - $desc"
 echo "Approved by: $approver_name"
+if [ -n "$approver_notes" ]; then
+    echo "Notes: $approver_notes"
+fi
 echo ""
 echo "The workflow will now continue processing."

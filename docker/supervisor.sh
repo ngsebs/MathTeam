@@ -832,6 +832,13 @@ NEXTStepSFILE
             if grep -qi "Project Owner Decision: A" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
                 log_info "Option A: Creating continuation project..."
                 local next_project_name="${project_name}-continued"
+                
+                # Extract custom prompt if provided
+                local custom_prompt_text=""
+                if grep -q "Custom Prompt" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
+                    custom_prompt_text=$(grep "Custom Prompt" "$next_steps_dir/next-steps-001.md" 2>/dev/null | sed 's/.*Custom Prompt.*: *//')
+                fi
+                
                 cat > "$INPUT_DIR/${next_project_name}.md" << EOF
 # Continuation: $project_name
 
@@ -840,11 +847,21 @@ NEXTStepSFILE
 **Problem Statement**: 
 Continue investigation based on next steps identified in $project_name.
 
+**Background/Context**:
+Previous investigation completed with proposed next steps.
+
 **Goals/Objectives**:
 - Implement proposed next steps from previous investigation
 
 **Priority**: High
 EOF
+                
+                # Append custom prompt if provided
+                if [ -n "$custom_prompt_text" ]; then
+                    echo "" >> "$INPUT_DIR/${next_project_name}.md"
+                    echo "**Project Owner Instructions**: $custom_prompt_text" >> "$INPUT_DIR/${next_project_name}.md"
+                fi
+                
                 log_info "Created continuation project: $next_project_name"
                 
             elif grep -qi "Project Owner Decision: B" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
