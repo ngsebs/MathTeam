@@ -19,7 +19,7 @@ fi
 INPUT_DIR="${INPUT_DIR:-/app/input}"
 OUTPUT_DIR="${OUTPUT_DIR:-/app/output}"
 COMM_DIR="${COMM_DIR:-/app/communication/threads}"
-DEC_DIR="${DEC_DIR:-/app/decisions/pending}"
+DEC_DIR="${DEC_DIR:-/app/decisions}"
 LOG_FILE="/app/communication/supervisor.log"
 # Use environment variables with proper defaults for Docker container (host.docker.internal for macOS)
 OLLAMA_HOST="${OLLAMA_HOST:-host.docker.internal:11434}"
