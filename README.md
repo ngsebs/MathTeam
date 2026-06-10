@@ -37,9 +37,9 @@ PENTeam/
 │   ├── protocol/
 │   └── owner-references/
 ├── decisions/             # Project Owner approval items
-│   ├── pending/
-│   ├── approved/
-│   └── rejected/
+│   ├── pending/[project]/    # Decision files awaiting Project Owner
+│   ├── approved/[project]/   # Approved decisions (moved after processing)
+│   └── rejected/[project]/   # Rejected decisions (moved after processing)
 ├── docker/               # Docker setup
 │   ├── Dockerfile
 │   ├── docker-compose.yml
@@ -130,6 +130,25 @@ ls decisions/pending/
 # Review completed results
 ls output/
 ```
+
+### 5. Make Decisions (Project Owner)
+
+When the supervisor creates a decision file in `/decisions/pending/[project]/`, use the decision dialog:
+
+```bash
+# Inside container
+/app/docker/decide.sh
+
+# From host
+docker exec pent-eam-math-team /app/docker/decide.sh
+```
+
+The dialog will:
+1. List pending decisions by project
+2. Allow selection by number or name
+3. Show available options based on decision type
+4. Accept signature and optional notes/prompts
+5. Move processed decisions to `/decisions/approved/` or `/decisions/rejected/`
 
 ## Quick Start
 

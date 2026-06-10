@@ -513,7 +513,7 @@ To approve a decision, add your response below:
 ```
 **Project Owner Decision**: [A/B/C]
 **Rationale**: [Your reasoning]
-**Approved By**: [Your name]
+**Signature**: [Your name]
 **Date**: $(date '+%Y-%m-%d %H:%M:%S')
 ```
 EOF
@@ -550,7 +550,7 @@ EOF
             
             # Check for decision response
             if grep -q "Project Owner Decision" "$decision_dir/decision-001.md" 2>/dev/null; then
-                if grep -q "Approved By" "$decision_dir/decision-001.md" 2>/dev/null; then
+                if grep -q "Signature" "$decision_dir/decision-001.md" 2>/dev/null; then
                     decision_made=true
                     log_info "Project owner decision received!"
                     update_progress "$project_name" "Supervisor" "Project owner decision received"
