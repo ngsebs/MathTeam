@@ -4,14 +4,26 @@
 
 set -e
 
+# Ensure environment variables are properly set for Docker container
+# These are set in docker-compose.yml and Dockerfile
+# If running outside compose, load from .env.example
+if [ -z "$OLLAMA_BASE_URL" ]; then
+    if [ -f /app/.env.example ]; then
+        set -a
+        source /app/.env.example
+        set +a
+    fi
+fi
+
 # Configuration
 INPUT_DIR="${INPUT_DIR:-/app/input}"
 OUTPUT_DIR="${OUTPUT_DIR:-/app/output}"
 COMM_DIR="${COMM_DIR:-/app/communication/threads}"
 DEC_DIR="${DEC_DIR:-/app/decisions/pending}"
 LOG_FILE="/app/communication/supervisor.log"
-OLLAMA_HOST="${OLLAMA_HOST:-localhost:11434}"
-OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://localhost:11434}"
+# Use environment variables with proper defaults for Docker container (host.docker.internal for macOS)
+OLLAMA_HOST="${OLLAMA_HOST:-host.docker.internal:11434}"
+OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
 
 # Colors
 RED='\033[0;31m'
@@ -57,6 +69,7 @@ check_ollama() {
     
     while [ $attempt -le $max_attempts ]; do
         if curl -s --max-time 5 "$OLLAMA_BASE_URL/api/tags" > /dev/null 2>&1; then
+            log_info "Ollama is reachable at $OLLAMA_BASE_URL"
             return 0
         fi
         
@@ -65,7 +78,8 @@ check_ollama() {
             sleep $retry_delay
             ((attempt++))
         else
-            log_warn "Ollama not available at ${OLLAMA_HOST} after $max_attempts attempts"
+            log_error "Ollama not available at $OLLAMA_BASE_URL after $max_attempts attempts"
+            log_error "Make sure Ollama is running on the host and accessible via $OLLAMA_HOST"
             return 1
         fi
     done
@@ -523,16 +537,37 @@ show_status() {
 # Main supervisor loop
 run_supervisor() {
     log_info "Starting PENTeam Supervisor..."
+    log_info "OLLAMA_HOST: $OLLAMA_HOST"
+    log_info "OLLAMA_BASE_URL: $OLLAMA_BASE_URL"
     
     # Initialize directories
     init_directories
     
-    # Check Ollama - continue even if not available (will retry)
-    if ! check_ollama; then
-        log_warn "Ollama not available - will continue monitoring and retry"
-    else
-        log_info "Ollama connection verified"
-    fi
+    # Check Ollama with extended retries on startup
+    local startup_attempts=10
+    local attempt=1
+    
+    log_info "Verifying Ollama connection (up to $startup_attempts attempts)..."
+    while [ $attempt -le $startup_attempts ]; do
+        if curl -s --max-time 5 "$OLLAMA_BASE_URL/api/tags" > /dev/null 2>&1; then
+            log_info "Ollama connection verified successfully"
+            break
+        fi
+        
+        if [ $attempt -lt $startup_attempts ]; then
+            log_warn "Ollama not responding (startup attempt $attempt/$startup_attempts), retrying in 2s..."
+            sleep 2
+            ((attempt++))
+        else
+            log_error "Ollama still not available after $startup_attempts startup attempts"
+            log_error "Container will continue but operations requiring Ollama will fail"
+            log_error "Troubleshooting:"
+            log_error "  1. Ensure Ollama is running on the host"
+            log_error "  2. Verify network connectivity: docker exec pent-eam-math-team curl -v $OLLAMA_BASE_URL/api/tags"
+            log_error "  3. Check Docker network: docker network inspect bridge"
+            break
+        fi
+    done
     
     log_info "Supervisor ready - monitoring $INPUT_DIR"
     
@@ -546,10 +581,20 @@ run_supervisor() {
         # Check for new projects every 10 seconds
         check_new_projects
         
-        # Periodic Ollama health check (every 5 minutes)
+        # Periodic Ollama health check (every 10 seconds, with recovery)
         if ! curl -s --max-time 3 "$OLLAMA_BASE_URL/api/tags" > /dev/null 2>&1; then
-            log_warn "Ollama connection lost, retrying..."
-            check_ollama
+            log_warn "Ollama connection lost at $OLLAMA_BASE_URL, retrying..."
+            # Try to reconnect with shorter timeout
+            local reconnect_attempts=3
+            for i in $(seq 1 $reconnect_attempts); do
+                if curl -s --max-time 3 "$OLLAMA_BASE_URL/api/tags" > /dev/null 2>&1; then
+                    log_info "Ollama connection restored"
+                    break
+                fi
+                if [ $i -lt $reconnect_attempts ]; then
+                    sleep 2
+                fi
+            done
         fi
         
         sleep 10

@@ -35,8 +35,9 @@ echo "Python Environment: /app/.venv (auto-activated)"
 echo ""
 
 # Check Ollama availability on macOS host (with retries)
+# Use host.docker.internal for macOS Docker host access
 echo "Checking Ollama availability..."
-OLLAMA_URL="http://localhost:11434/api/tags"
+OLLAMA_URL="http://host.docker.internal:11434/api/tags"
 MAX_RETRIES=3
 RETRY_DELAY=2
 ollama_available=false
@@ -67,8 +68,9 @@ if [ "$ollama_available" = true ]; then
     fi
 else
     echo ""
-    echo "⚠ Ollama not detected at $OLLAMA_URL"
+    echo "⚠ Ollama not detected at $OLLAMA_URL (using host.docker.internal:11434)"
     echo ""
+    echo "  In --network host mode, the container must reach Ollama via host.docker.internal"
     echo "  The container will still start and retry Ollama connection."
     echo "  To fix this, on macOS host run:"
     echo "    1. ollama serve"
@@ -114,7 +116,7 @@ case "$MODE" in
 esac
 
 # Run the container with host network mode
-# This allows direct access to localhost:11434 where Ollama runs on the host
+# In host network mode on macOS, use host.docker.internal to reach the host
 echo "Starting Docker container..."
 docker run \
     --rm \
@@ -136,8 +138,8 @@ docker run \
     -v "$SCRIPT_DIR:/app/docker:ro" \
     -v ~/.openhands:/root/.openhands \
     -w /app \
-    -e OLLAMA_HOST=localhost:11434 \
-    -e OLLAMA_BASE_URL=http://localhost:11434 \
+    -e OLLAMA_HOST=host.docker.internal:11434 \
+    -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
     ${SUPERVISOR_MODEL:+-e SUPERVISOR_MODEL="$SUPERVISOR_MODEL"} \
     ${CREATIVE_MATH_MODEL:+-e CREATIVE_MATH_MODEL="$CREATIVE_MATH_MODEL"} \
     ${SENIOR_MATH_MODEL:+-e SENIOR_MATH_MODEL="$SENIOR_MATH_MODEL"} \
