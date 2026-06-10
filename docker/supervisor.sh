@@ -67,12 +67,24 @@ safe_append() {
 write_response() {
     local file="$1"
     local response="$2"
+    debug_log "write_response: file=$file, response_length=${#response}"
+    
     # Use temp file to safely write content with special characters
     local temp_file
     temp_file=$(mktemp)
     printf '%s' "$response" > "$temp_file"
+    debug_log "write_response: temp_file=$temp_file, bytes=$(wc -c < "$temp_file")"
     cat "$temp_file" >> "$file"
     rm -f "$temp_file"
+    debug_log "write_response: completed"
+}
+
+# Debug logging function
+debug_log() {
+    if [ "$DEBUG_LOG" = "true" ] || [ "$DEBUG_LOG" = "1" ]; then
+        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+        echo "[DEBUG $timestamp] $1" >> /app/communication/debug.log
+    fi
 }
 
 call_ollama() {
@@ -80,22 +92,35 @@ call_ollama() {
     local prompt="$2"
     local response
     
+    debug_log "call_ollama: model=$model, prompt_length=${#prompt}"
+    
+    # Escape prompt for JSON properly using jq
+    local escaped_prompt
+    escaped_prompt=$(printf '%s' "$prompt" | jq -Rs .)
+    debug_log "call_ollama: escaped_prompt=$escaped_prompt"
+    
     response=$(curl -s --max-time 120 "$OLLAMA_BASE_URL/api/generate" \
         -H "Content-Type: application/json" \
-        -d "{\"model\": \"$model\", \"prompt\": $(printf '%s' "$prompt" | jq -Rs .), \"stream\": false}")
+        -d "{\"model\": \"$model\", \"prompt\": $escaped_prompt, \"stream\": false}")
+    
+    debug_log "call_ollama: raw_response=$response"
     
     # Extract response safely, handle errors
     local extracted
     extracted=$(echo "$response" | jq -r '.response // empty' 2>/dev/null)
     
+    debug_log "call_ollama: extracted_length=${#extracted}"
+    
     if [ -z "$extracted" ]; then
         # Try to get error message
         local error_msg
         error_msg=$(echo "$response" | jq -r '.error // "Unknown error"' 2>/dev/null)
+        debug_log "call_ollama: ERROR - $error_msg"
         echo "Error: $error_msg"
         return 1
     fi
     
+    debug_log "call_ollama: success, response_preview=${extracted:0:100}..."
     echo "$extracted"
 }
 

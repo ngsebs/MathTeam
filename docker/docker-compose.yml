@@ -35,6 +35,8 @@ services:
       # Explicit override - ensures these are set even if .env.example isn't loaded
       - OLLAMA_HOST=host.docker.internal:11434
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Debug logging (set to true to see detailed logs in /app/communication/debug.log)
+      - DEBUG_LOG=${DEBUG_LOG:-true}
       # Agent-specific models (lightweight local models)
       - SUPERVISOR_MODEL=${SUPERVISOR_MODEL:-llama3.2:3b}
       - CREATIVE_MATH_MODEL=${CREATIVE_MATH_MODEL:-llama3.2:3b}
