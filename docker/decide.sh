@@ -22,8 +22,10 @@ echo ""
 
 # Check for pending decisions - get all .md files recursively
 pending_count=0
-for file in "$DECISIONS_DIR/pending"/*/*.md 2>/dev/null; do
-    [ -f "$file" ] && ((pending_count++))
+for file in "$DECISIONS_DIR/pending"/*/*.md; do
+    if [ -f "$file" ]; then
+        pending_count=$((pending_count + 1))
+    fi
 done
 
 if [ "$pending_count" -eq 0 ]; then
@@ -37,8 +39,10 @@ echo ""
 
 # Build associative array of projects and their decision files
 declare -A project_files
-for file in "$DECISIONS_DIR/pending"/*/*.md 2>/dev/null; do
-    [ -f "$file" ] || continue
+for file in "$DECISIONS_DIR/pending"/*/*.md; do
+    if [ ! -f "$file" ]; then
+        continue
+    fi
     project=$(basename "$(dirname "$file")")
     if [ -z "${project_files[$project]}" ]; then
         project_files[$project]="$file"
@@ -57,7 +61,7 @@ declare -A num_to_project
 for proj in $sorted_projects; do
     echo -e "  ${CYAN}[$project_num]${NC} $proj"
     num_to_project[$project_num]="$proj"
-    ((project_num++))
+    project_num=$((project_num + 1))
 done
 echo ""
 
@@ -94,9 +98,13 @@ echo -e "${CYAN}Project: ${BOLD}$selected_project${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
 
 # Get decision files for selected project - convert newline-separated to array
-IFS=$'\n' read -d '' -r -a decision_files <<< "${project_files[$selected_project]}" 2>/dev/null || true
-# Remove empty last element if present
-decision_files=("${decision_files[@]}")
+IFS_backup="$IFS"
+IFS=$'\n'
+decision_files=()
+for line in ${project_files[$selected_project]}; do
+    [ -n "$line" ] && decision_files+=("$line")
+done
+IFS="$IFS_backup"
 decision_count=${#decision_files[@]}
 
 # If multiple files, let user select
@@ -129,9 +137,9 @@ echo ""
 
 # Detect decision type and show appropriate options
 decision_type="general"
-if grep -qi "next step\|further investigation\|continuation" "$decision_file" 2>/dev/null; then
+if grep -qi "next step\|further investigation\|continuation" "$decision_file"; then
     decision_type="next_steps"
-elif grep -qi "computationally\|np-\|infeasible\|complexity" "$decision_file" 2>/dev/null; then
+elif grep -qi "computationally\|np-\|infeasible\|complexity" "$decision_file"; then
     decision_type="computation"
 fi
 
@@ -201,7 +209,8 @@ echo -e "(Press Enter to skip, or enter multiple lines ending with empty line)"
 free_form_prompt=""
 while read -r line; do
     [ -z "$line" ] && break
-    [ -z "$free_form_prompt" ] && free_form_prompt="$line" || free_form_prompt="$free_form_prompt"$'\n'"$line"
+    [ -z "$free_form_prompt" ] && free_form_prompt="$line" || free_form_prompt="$free_form_prompt"$'
+'"$line"
 done
 
 # Write decision
