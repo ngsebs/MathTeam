@@ -9,8 +9,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -d "/app/decisions/pending" ]; then
     DECISIONS_DIR="/app/decisions"
 else
-    DECISIONS_DIR="$SCRIPT_DIR/../decisions/pending"
+    DECISIONS_DIR="$SCRIPT_DIR/../decisions"
 fi
+
+# Ensure all decision directories exist
+mkdir -p "$DECISIONS_DIR/pending"
+mkdir -p "$DECISIONS_DIR/approved"
+mkdir -p "$DECISIONS_DIR/rejected"
 
 # Colors
 RED='\033[0;31m'
@@ -226,20 +231,29 @@ timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo ""
     echo "## Project Owner Decision"
     echo ""
-    echo "**Decision**: $decision ($desc)"
+    echo "**Project Owner Decision**: $decision ($desc)"
     echo ""
     echo "**Timestamp**: $timestamp"
     echo ""
-    echo "**Approved By**: $signature"
-echo "**Signature**: $signature"
+    echo "**Signature**: $signature"
     echo ""
     [ -n "$approver_notes" ] && echo "**Notes**: $approver_notes" && echo ""
     [ -n "$free_form_prompt" ] && echo "**Free-form Prompt**: " && echo "$free_form_prompt" && echo ""
 } >> "$decision_file"
 
-# Move to approved
-mkdir -p "$DECISIONS_DIR/approved/$selected_project"
-mv "$decision_file" "$DECISIONS_DIR/approved/$selected_project/"
+# Move to appropriate directory based on decision type
+# Options A and C go to approved, option B for general decisions is "Reject" -> rejected/
+if [ "$decision" = "B" ] && [ "$decision_type" = "general" ]; then
+    # Option B for general decisions is "Reject"
+    mkdir -p "$DECISIONS_DIR/rejected/$selected_project"
+    mv "$decision_file" "$DECISIONS_DIR/rejected/$selected_project/"
+    echo ""
+    echo -e "${RED}⚠ Decision recorded as REJECTED.${NC}"
+else
+    # A (Approve/Continue/Skip) and C (Request More Info/Theoretical/End) go to approved
+    mkdir -p "$DECISIONS_DIR/approved/$selected_project"
+    mv "$decision_file" "$DECISIONS_DIR/approved/$selected_project/"
+fi
 
 echo ""
 echo -e "${GREEN}✓ Decision recorded and saved!${NC}"

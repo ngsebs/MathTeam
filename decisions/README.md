@@ -2,90 +2,97 @@
 
 This directory stores all decisions that require involvement of the Project Owner, kept separate for clear audit trail and prioritization.
 
-## Structure
+## Directory Structure
+
+| Directory | Purpose | Created By |
+|-----------|---------|------------|
+| `pending/` | Unresolved decisions awaiting owner input | supervisor.sh |
+| `approved/` | Approved decisions | decide.sh |
+| `rejected/` | Rejected decisions | decide.sh |
+
+Directories are auto-created by `docker/decide.sh` when needed.
+
+## Decision Lifecycle
 
 ```
-decisions/
-├── pending/
-│   └── [project-name]/
-│       ├── decision-001.md
-│       └── ...
-├── approved/
-│   └── [project-name]/
-│       ├── decision-001.md  # With approval timestamp
-│       └── ...
-├── rejected/
-│   └── [project-name]/
-│       ├── decision-001.md  # With rejection reason
-│       └── ...
-└── template.md
+1. Created (pending/)     → supervisor.sh escalates a decision
+2. Reviewed (pending/)     → Project Owner runs docker/decide.sh
+3. Resolved (approved/ or rejected/)
 ```
+
+## Using decide.sh
+
+Run the decision dialog to process pending decisions:
+
+```bash
+cd docker && ./decide.sh
+```
+
+The script will:
+1. List all pending decisions by project
+2. Show decision content and options
+3. Prompt for name, notes, and free-form instructions
+4. Write the decision response
+5. Move the file to `approved/` or `rejected/`
+
+### Options by Decision Type
+
+| Type | Option A | Option B | Option C |
+|------|----------|----------|----------|
+| General | Approve | Reject | Request More Info |
+| Next Steps | Continue | Document for Future | End Investigation |
+| Computation | Skip | Approximate | Theoretical Reference |
 
 ## Decision Format
 
+Each decision file contains:
+
 ```markdown
-# Decision Record: [Decision Title]
+# Decision Record: [Title]
 
 **Decision ID**: DEC-[PROJECT]-[NUMBER]
 **Project**: [Project Name]
 **Date Created**: [Date]
-**Status**: [Pending | Approved | Rejected | Deferred]
+**Status**: [Pending | Approved | Rejected]
 
-## Decision Summary
-[One-paragraph summary of the decision needed]
+## Summary
+[What needs to be decided]
 
 ## Background
-[Why is this decision needed? What triggered it?]
-
-## Decision Details
-[Detailed description of what is being decided]
+[Why this decision is needed]
 
 ## Options
-
 ### Option A: [Name]
-**Description**: [What this option entails]
-**Pros**:
-- [Pro 1]
-- [Pro 2]
-**Cons**:
-- [Con 1]
-- [Con 2]
-
 ### Option B: [Name]
-**Description**: [What this option entails]
-**Pros**:
-- [Pro 1]
-- [Pro 2]
-**Cons**:
-- [Con 1]
-- [Con 2]
-
-## Analysis
-[Analysis of options, risks, trade-offs]
-
-## Recommendation
-[Supervisor's recommendation with rationale]
+### Option C: [Name]
 
 ## Required From Project Owner
-- [ ] Approval to proceed
-- [ ] Selection of preferred option
-- [ ] Additional information needed
-- [ ] Other: [Specify]
 
-## Response
+Run `docker/decide.sh` to make a decision.
 
-**Decision**: [Option A / Option B / Deferred]
-**Approved By**: [Project Owner Name]
-**Date**: [Date]
-**Comments**: [Any comments or conditions from Project Owner]
+---
 
-## Implementation Notes
-[How this decision affects project execution]
+## Project Owner Decision
+
+**Project Owner Decision**: A/B/C
+**Timestamp**: [Date]
+**Signature**: [Name] <[Date]>
+**Notes**: [Optional notes]
+**Free-form Prompt**: [Optional instructions]
 ```
 
-## Usage Guidelines
+## Creating Decisions (for Developers)
 
-1. **Create new decision** → Add to `pending/[project]/`
-2. **Project Owner reviews** → Move to `approved/` or `rejected/` with response
-3. **Track all owner decisions** → Never decide without explicit owner approval
-4. **Reference in threads** → Link decision IDs in communication threads
+To escalate a decision from supervisor.sh:
+
+1. Create directory: `decisions/pending/[project-name]/`
+2. Create file: `decision-001.md` (or `next-steps-001.md`)
+3. Include the decision template with options
+4. Supervisor polls for "Project Owner Decision:" and "Signature:"
+
+## Guidelines
+
+1. **Never skip** - Always escalate controversial or high-impact decisions
+2. **Be specific** - Include clear options and analysis in each decision
+3. **Track all decisions** - Use approved/rejected for audit trail
+4. **Reference in threads** - Link decision IDs in communication threads
