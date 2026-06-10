@@ -88,41 +88,77 @@ cat /app/communication/threads/[project]/progress.md
 
 ### Step 5: Make Decisions
 
-When the team needs your input:
+When the team needs your input, you'll find decision files in `/app/decisions/pending/`:
 
 ```bash
 # Review pending decisions
 ls /app/decisions/pending/
 
-# Approve or reject
-mv /app/decisions/pending/[project]/[decision].md /app/decisions/approved/
-# OR
-mv /app/decisions/pending/[project]/[decision].md /app/decisions/rejected/
+# View the decision record
+cat /app/decisions/pending/[project]/decision-001.md
 ```
+
+**Decision Types:**
+
+1. **Computationally Challenging Theorems**: When theorems are mathematically valid but computationally infeasible, you'll choose:
+   - **A) Skip**: Don't implement these theorems
+   - **B) Approximate**: Implement simplified versions
+   - **C) Theoretical Reference**: Document without implementation (default)
+
+**To respond to a decision:**
+Edit the decision file and add your response:
+```
+**Project Owner Decision**: [A/B/C]
+**Rationale**: [Your reasoning]
+**Approved By**: [Your name]
+**Date**: 2024-01-15
+```
+
+The workflow will continue once you provide your decision.
 
 ## Project Lifecycle
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  /app/input │────►│  Supervisor  │────►│  /app/output/   │
-│  (Your file)│     │  (Detects &  │     │  (Investigation │
-│             │     │   plans)     │     │   results)      │
-└─────────────┘     └──────────────┘     └─────────────────┘
-                            │
-         ┌─────────────────┼─────────────────┐
-         │                 │                 │
-         ▼                 ▼                 ▼
-┌──────────────┐  ┌────────────────┐  ┌──────────────┐
-│   Creative   │  │     Senior     │  │    Python    │
-│  Mathematician│  │  Mathematician │  │    Coder     │
-│  (Theorems)  │  │   (Reviews)    │  │  (Implements)│
-└──────────────┘  └────────────────┘  └──────────────┘
-                                                 │
-                                                 ▼
-                                         ┌──────────────┐
-                                         │    Tester    │
-                                         │  (Validates) │
-                                         └──────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     MATH INVESTIGATION PIPELINE                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐   │
+│  │  /app/input │────►│  Supervisor  │────►│  /app/output/   │   │
+│  │  (Your file)│     │  (Detects &  │     │  (Investigation │   │
+│  └─────────────┘     │   plans)     │     │   results)      │   │
+│                      └──────┬───────┘     └─────────────────┘   │
+│                             │                                   │
+│         ┌───────────────────┼───────────────────┐                │
+│         │                   │                   │                │
+│         ▼                   ▼                   ▼                │
+│  ┌──────────────┐  ┌────────────────┐  ┌──────────────────┐    │
+│  │   Creative   │  │     Senior     │  │    Python        │    │
+│  │  Mathematician│  │  Mathematician │  │    Coder         │    │
+│  │  (Theorems)  │  │   (Reviews)    │  │  (Implements)    │    │
+│  └──────┬───────┘  └───────┬────────┘  └──────────────────┘    │
+│         │                  │                                   │
+│         │     REJECT?      │                                   │
+│         │   (loop 1-3)     │                                   │
+│         │◄─────────────────┘                                   │
+│         │                                                      │
+│         │         APPROVED                                    │
+│         │◄─────────────────────────────────────────────────────┤
+│         │                                                      │
+│         │    ┌────────────────────────────────────────────────┐ │
+│         │    │ PROJECT OWNER DECISION                        │ │
+│         │    │ (if mathematically sound but computationally │ │
+│         │    │  challenging - requires your input)           │ │
+│         │    └────────────────────────────────────────────────┘ │
+│         │                                                      │
+│         └─────────────────────────────────────────────────────►│
+│                                                                  │
+│         ┌────────────────────────────────────────────────────┐ │
+│         │                 IMPLEMENTATION                      │ │
+│         │  Creative Math → Senior Review → Owner Decision     │ │
+│         │         → Python Coder → Tester → Summary          │ │
+│         └────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Directory Reference

@@ -259,16 +259,24 @@ Propose 2-3 concrete theorems or mathematical statements that can be explored co
     
     update_task_status "$project_name" "TASK-002" "Completed"
     
-    # Phase 2: Senior Mathematician - Review
+    # Phase 2: Senior Mathematician - Review with Feedback Loop
     log_info "Phase 2: Senior Mathematician reviewing theorems..."
-    update_task_status "$project_name" "TASK-003" "In Progress"
-    update_progress "$project_name" "Senior Mathematician" "Reviewing proposed theorems"
     
-    # Read theorems file with fallback
-    local theorems_for_review=""
-    [ -f "$project_dir/theorems/proposed.md" ] && theorems_for_review=$(cat "$project_dir/theorems/proposed.md")
+    # Feedback loop: keep reviewing until all theorems are approved or max iterations reached
+    local max_review_iterations=3
+    local iteration=1
+    local review_complete=false
     
-    local review_prompt="You are a Senior Mathematician. Critically review these proposed theorems:
+    while [ "$review_complete" = "false" ] && [ $iteration -le $max_review_iterations ]; do
+        log_info "Review iteration $iteration of $max_review_iterations"
+        update_task_status "$project_name" "TASK-003" "In Progress"
+        update_progress "$project_name" "Senior Mathematician" "Review iteration $iteration"
+        
+        # Read current theorems file with fallback
+        local theorems_for_review=""
+        [ -f "$project_dir/theorems/proposed.md" ] && theorems_for_review=$(cat "$project_dir/theorems/proposed.md")
+        
+        local review_prompt="You are a Senior Mathematician. Critically review these proposed theorems:
 
 Project: $project_name
 
@@ -282,18 +290,233 @@ For each theorem, provide:
 4. **Recommendation**: Approve, modify, or reject
 
 Be rigorous but open to innovative approaches."
+
+        local review=$(call_ollama "$model" "$review_prompt")
+        
+        echo "# Review: $project_name" > "$project_dir/review/critique.md"
+        echo "" >> "$project_dir/review/critique.md"
+        echo "## Senior Mathematician Review (Iteration $iteration)" >> "$project_dir/review/critique.md"
+        echo "" >> "$project_dir/review/critique.md"
+        echo "$review" >> "$project_dir/review/critique.md"
+        echo "" >> "$project_dir/review/critique.md"
+        echo "*Generated: $(date '+%Y-%m-%d %H:%M:%S')*" >> "$project_dir/review/critique.md"
+        
+        # Check if review contains any rejections or modifications needed
+        local review_lower=$(echo "$review" | tr '[:upper:]' '[:lower:]')
+        
+        if echo "$review_lower" | grep -q "reject\|rejected\|cannot be verified\|flawed"; then
+            log_warn "Senior Mathematician identified issues requiring revision"
+            
+            # Extract the review content for feedback to Creative Mathematician
+            local revision_prompt="You are a Creative Mathematician. The Senior Mathematician has reviewed your proposed theorems and found issues that need to be addressed:
+
+Project: $project_name
+
+Original Theorems:
+${theorems_for_review}
+
+Senior Mathematician Feedback:
+${review}
+
+Please revise the rejected or problematic theorems based on the feedback.
+For each issue:
+1. Acknowledge the concern raised
+2. Either fix the theorem or provide a new approach
+3. Ensure all theorems are computationally verifiable
+
+Output revised theorems in the same format:
+- **Theorem [N]**: [Revised formal statement]
+- **Approach**: [How to investigate]
+- **Expected outcome**: [What we might discover]"
+            
+            log_info "Sending rejected theorems back to Creative Mathematician for revision..."
+            update_progress "$project_name" "Creative Mathematician" "Revising theorems based on Senior Mathematician feedback"
+            
+            local revised_theorems=$(call_ollama "$model" "$revision_prompt")
+            
+            # Save revised theorems with history
+            echo "" >> "$project_dir/theorems/proposed.md"
+            echo "---" >> "$project_dir/theorems/proposed.md"
+            echo "## Revision $iteration (Based on Senior Mathematician Feedback)" >> "$project_dir/theorems/proposed.md"
+            echo "" >> "$project_dir/theorems/proposed.md"
+            echo "$revised_theorems" >> "$project_dir/theorems/proposed.md"
+            echo "" >> "$project_dir/theorems/proposed.md"
+            echo "*Generated: $(date '+%Y-%m-%d %H:%M:%S')*" >> "$project_dir/theorems/proposed.md"
+            
+            log_info "Revised theorems saved, continuing to next review iteration..."
+            ((iteration++))
+        else
+            log_info "All theorems approved by Senior Mathematician"
+            update_progress "$project_name" "Senior Mathematician" "All theorems approved"
+            review_complete=true
+        fi
+    done
     
-    local review=$(call_ollama "$model" "$review_prompt")
-    
-    echo "# Review: $project_name" > "$project_dir/review/critique.md"
-    echo "" >> "$project_dir/review/critique.md"
-    echo "## Senior Mathematician Review" >> "$project_dir/review/critique.md"
-    echo "" >> "$project_dir/review/critique.md"
-    echo "$review" >> "$project_dir/review/critique.md"
-    echo "" >> "$project_dir/review/critique.md"
-    echo "*Generated: $(date '+%Y-%m-%d %H:%M:%S')*" >> "$project_dir/review/critique.md"
+    if [ $iteration -gt $max_review_iterations ] && [ "$review_complete" = "false" ]; then
+        log_warn "Max review iterations reached. Proceeding with current theorems."
+        update_progress "$project_name" "Senior Mathematician" "Max iterations reached - proceeding with current theorems"
+    fi
     
     update_task_status "$project_name" "TASK-003" "Completed"
+    
+    # Phase 2.5: Decision Escalation - Project Owner Input
+    # Check if any theorems are analytically sound but cannot be computationally represented
+    log_info "Phase 2.5: Checking for theorems requiring project owner decision..."
+    update_progress "$project_name" "Supervisor" "Checking for decision escalation"
+    
+    # Detect theorems that are mathematically valid but computationally problematic
+    local review_content=""
+    [ -f "$project_dir/review/critique.md" ] && review_content=$(cat "$project_dir/review/critique.md")
+    local review_lower=$(echo "$review_content" | tr '[:upper:]' '[:lower:]')
+    
+    local needs_decision=false
+    local theorems_needing_decision=""
+    
+    # Patterns indicating analytically sound but computationally challenging theorems
+    if echo "$review_lower" | grep -qE "analytically sound|mathematically valid|mathematically sound|conceptually correct"; then
+        if echo "$review_lower" | grep -qE "cannot be computed|not computationally|cannot verify computationally|computationally infeasible|no practical algorithm|undecidable|np-complete|exponential complexity"; then
+            needs_decision=true
+            theorems_needing_decision="Theorems flagged as mathematically sound but computationally challenging"
+        fi
+    fi
+    
+    if [ "$needs_decision" = "true" ]; then
+        log_warn "Theorems identified as analytically sound but computationally problematic"
+        
+        # Create decision record for project owner
+        local decision_dir="$DEC_DIR/$project_name"
+        mkdir -p "$decision_dir"
+        
+        cat > "$decision_dir/decision-001.md" << EOF
+# Decision Record: Theorems Requiring Project Owner Input
+
+**Decision ID**: DEC-001
+**Project**: $project_name
+**Date Created**: $(date '+%Y-%m-%d %H:%M:%S')
+**Status**: Pending
+
+## Decision Summary
+
+Some theorems have been identified as mathematically valid/analytically sound but present computational challenges for implementation.
+
+## Background
+
+The Senior Mathematician has reviewed the proposed theorems and identified that certain theorems are:
+- Mathematically correct and significant
+- But cannot be practically implemented with current computational methods
+
+## Theorems Requiring Decision
+
+$theorems_needing_decision
+
+## Senior Mathematician Assessment
+
+$(cat "$project_dir/review/critique.md")
+
+## Options
+
+### Option A: Skip Implementation
+**Proceed with implementation of only computationally feasible theorems**
+- The mathematically sound theorems will be documented but not implemented
+- Focus on what can be computed and verified
+- May limit scope of investigation
+
+### Option B: Approximate Implementation
+**Implement simplified or approximate versions**
+- Use numerical approximations where analytical solutions are infeasible
+- May reduce precision but allows computational exploration
+- Document limitations in implementation
+
+### Option C: Include as Theoretical Reference
+**Document theorems in final report without implementation**
+- Theorems are valid but marked as "theoretical only"
+- Future work may include implementation when methods become available
+- Does not block current investigation
+
+## Recommendation
+
+The Senior Mathematician recommends: **Option C** (Include as Theoretical Reference)
+
+## Required From Project Owner
+
+- [ ] Review the mathematically sound but computationally challenging theorems
+- [ ] Select preferred handling approach (A, B, or C)
+- [ ] Respond in this file or via communication thread
+
+## Response Format
+
+To approve a decision, add your response below:
+
+```
+**Project Owner Decision**: [A/B/C]
+**Rationale**: [Your reasoning]
+**Approved By**: [Your name]
+**Date**: $(date '+%Y-%m-%d %H:%M:%S')
+```
+EOF
+        
+        log_info "Decision record created at $decision_dir/decision-001.md"
+        update_progress "$project_name" "Supervisor" "Awaiting project owner decision on computationally problematic theorems"
+        
+        # Wait for project owner decision with polling
+        local decision_timeout=3600  # 1 hour timeout
+        local decision_start=$(date +%s)
+        local decision_made=false
+        
+        log_info "Waiting for project owner decision (timeout: ${decision_timeout}s)..."
+        
+        while [ "$decision_made" = "false" ]; do
+            local current_time=$(date +%s)
+            local elapsed=$((current_time - decision_start))
+            
+            if [ $elapsed -gt $decision_timeout ]; then
+                log_warn "Decision timeout reached. Proceeding with default (Option C: Theoretical Reference)."
+                update_progress "$project_name" "Supervisor" "Decision timeout - defaulting to Option C"
+                
+                # Add default decision
+                cat >> "$decision_dir/decision-001.md" << EOF
+
+## Default Decision (Timeout)
+
+**Project Owner Decision**: C (Default - Timeout)
+**Rationale**: Decision timeout - defaulting to including theorems as theoretical reference
+**Date**: $(date '+%Y-%m-%d %H:%M:%S')
+EOF
+                break
+            fi
+            
+            # Check for decision response
+            if grep -q "Project Owner Decision" "$decision_dir/decision-001.md" 2>/dev/null; then
+                if grep -q "Approved By" "$decision_dir/decision-001.md" 2>/dev/null; then
+                    decision_made=true
+                    log_info "Project owner decision received!"
+                    update_progress "$project_name" "Supervisor" "Project owner decision received"
+                fi
+            fi
+            
+            if [ "$decision_made" = "false" ]; then
+                log_info "Waiting for decision... (${elapsed}s elapsed)"
+                sleep 30  # Check every 30 seconds
+            fi
+        done
+        
+        # Move decision to appropriate directory based on outcome
+        if grep -q "Project Owner Decision: A\|Project Owner Decision: a" "$decision_dir/decision-001.md" 2>/dev/null; then
+            log_info "Project owner chose Option A: Skip implementation"
+            mkdir -p "$DEC_DIR/approved/$project_name"
+            mv "$decision_dir/decision-001.md" "$DEC_DIR/approved/$project_name/"
+        elif grep -q "Project Owner Decision: B\|Project Owner Decision: b" "$decision_dir/decision-001.md" 2>/dev/null; then
+            log_info "Project owner chose Option B: Approximate implementation"
+            mkdir -p "$DEC_DIR/approved/$project_name"
+            mv "$decision_dir/decision-001.md" "$DEC_DIR/approved/$project_name/"
+        else
+            log_info "Project owner chose Option C: Theoretical reference (default)"
+            mkdir -p "$DEC_DIR/approved/$project_name"
+            mv "$decision_dir/decision-001.md" "$DEC_DIR/approved/$project_name/"
+        fi
+    else
+        log_info "No decision escalation needed - all theorems are computationally feasible"
+    fi
     
     # Phase 3: Python Coder - Implement
     log_info "Phase 3: Python Coder implementing..."
@@ -369,6 +592,13 @@ Format as valid pytest code with assertions."
     echo '"""' >> "$project_dir/tests/test_solution.py"
     echo "" >> "$project_dir/tests/test_solution.py"
     echo "import pytest" >> "$project_dir/tests/test_solution.py"
+    echo "import sys" >> "$project_dir/tests/test_solution.py"
+    echo "import os" >> "$project_dir/tests/test_solution.py"
+    echo "" >> "$project_dir/tests/test_solution.py"
+    echo "# Add implementation directory to path so tests can import solution module" >> "$project_dir/tests/test_solution.py"
+    echo "_IMPL_DIR = os.path.join(os.path.dirname(__file__), '..', 'implementation')" >> "$project_dir/tests/test_solution.py"
+    echo "if _IMPL_DIR not in sys.path:" >> "$project_dir/tests/test_solution.py"
+    echo "    sys.path.insert(0, _IMPL_DIR)" >> "$project_dir/tests/test_solution.py"
     echo "" >> "$project_dir/tests/test_solution.py"
     echo "$tests" >> "$project_dir/tests/test_solution.py"
     

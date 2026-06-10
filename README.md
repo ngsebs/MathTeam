@@ -80,19 +80,34 @@ The Supervisor will:
 - Plan investigation approach
 
 ### 2. Team Investigates
-The Supervisor delegates work through phases:
+The Supervisor delegates work through phases with built-in feedback loops:
 
 1. **Proposal** → Creative Mathematician formulates theorems
-2. **Review** → Senior Mathematician critically reviews
-3. **Implementation** → Python Coder translates to code
-4. **Testing** → Tester validates with comprehensive tests
-5. **Integration** → Supervisor summarizes findings
+2. **Review** → Senior Mathematician critically reviews (with iteration loop)
+3. **Decision** → Project Owner decides on computationally challenging theorems
+4. **Implementation** → Python Coder translates approved theorems to code
+5. **Testing** → Tester validates with comprehensive tests
+6. **Integration** → Supervisor summarizes findings
+
+#### Feedback Loops
+
+The workflow includes two important feedback mechanisms:
+
+**Mathematician Feedback Loop**
+- Senior Mathematician may reject theorems (max 3 iterations)
+- Rejected theorems return to Creative Mathematician with feedback
+- Only approved theorems proceed to implementation
+
+**Project Owner Escalation**
+- When theorems are mathematically valid but computationally infeasible
+- Project Owner chooses: Skip / Approximate / Theoretical Reference
+- Decision stored in `/decisions/pending/[project]/`
 
 ### 3. Project Owner Involvement
 Decisions requiring human approval are stored in `/decisions/`:
 
-- Supervisor creates decision records in `pending/`
-- Project Owner reviews and approves/rejects
+- Supervisor creates decision records in `pending/[project]/`
+- Project Owner reviews and adds their decision
 - Approved decisions unlock next steps
 - Rejected decisions trigger revision
 
@@ -269,13 +284,50 @@ The project is self-contained with all necessary agent configurations:
    ┌─────────┬─────────┬─────────┐ ┌─────────┐ ┌─────────┐
    │Creative │ Senior  │ Python  │ │ Tester  │ │Decision │
    │  Math   │   Math  │  Coder  │ │         │ │  Store  │
-   └────┬────┘────┬────┘────┬────┘────┬────┘────┬────┘
-        │         │         │         │         │
-        ▼         ▼         ▼         ▼         ▼
+   └────┬────┘────┬────┘────┬────┘─────────┘─────────────┘
+        │         │
+        │         │◄──── REJECT? (max 3 iterations)
+        │         │
+        │    APPROVED
+        │         │
+        ▼         ▼
+   ┌────────────────────────────────────────────────────┐
+   │            PROJECT OWNER DECISION                   │
+   │  (if mathematically sound but computationally      │
+   │   challenging)                                      │
+   └──────────────┬─────────────────────────────────────┘
+                  │
+                  ▼
 ┌─────────────────────────────────────────────────────────┐
 │                      OUTPUT/                             │
 │  theorems/  review/  implementation/  tests/  summary.md │
 └─────────────────────────────────────────────────────────┘
+```
+
+### Investigation Pipeline Detail
+
+```
+1. Creative Mathematician proposes theorems
+         │
+         ▼
+2. Senior Mathematician reviews
+         │
+         ├─► APPROVED ─────────────────────┐
+         │                                   │
+         └─► REJECTED ─► Revise (loop 1-3) ─┘
+         │
+         ▼
+3. Project Owner Decision (if needed)
+   - Skip / Approximate / Theoretical Reference
+         │
+         ▼
+4. Python Coder implements approved theorems
+         │
+         ▼
+5. Tester creates and runs tests
+         │
+         ▼
+6. Supervisor compiles final summary
 ```
 
 ## License
