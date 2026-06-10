@@ -103,6 +103,12 @@ The workflow includes two important feedback mechanisms:
 - Project Owner chooses: Skip / Approximate / Theoretical Reference
 - Decision stored in `/decisions/pending/[project]/`
 
+**Next Steps Escalation (Phase 5.5)**
+- When summary contains proposed next steps or further investigation
+- Project Owner decides: Continue / Document / End
+- Use `/app/docker/decide.sh` for interactive decision-making
+- Decision triggers automatic continuation or documentation
+
 ### 3. Project Owner Involvement
 Decisions requiring human approval are stored in `/decisions/`:
 

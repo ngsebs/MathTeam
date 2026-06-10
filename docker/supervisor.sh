@@ -759,6 +759,106 @@ EOF
 
     log_info "Investigation complete for: $project_name"
     update_progress "$project_name" "Supervisor" "Investigation complete"
+
+    # Phase 5.5: Handle next steps escalation
+    if echo "$summary" | grep -qiE "next step|further investigation|future work|recommended|proposed follow"; then
+        log_info "Phase 5.5: Summary contains next steps - escalating to Project Owner..."
+        
+        local next_steps_dir="$DEC_DIR/$project_name"
+        mkdir -p "$next_steps_dir"
+        
+        cat > "$next_steps_dir/next-steps-001.md" << 'NEXTStepSFILE'
+# Next Steps Escalation: $project_name
+
+**Decision ID**: NEXT-001
+**Project**: $project_name
+**Date Created**: %DATE%
+**Status**: Pending
+
+## Summary
+
+The investigation has identified potential next steps for further work.
+
+## Proposed Next Steps
+
+See the summary above for recommended next steps.
+
+## Options
+
+### Option A: Continue Investigation
+Create a new project with the proposed next steps.
+
+### Option B: Document for Future Work
+Save next steps to /app/output/$project_name/next-steps.md.
+
+### Option C: End Investigation Here
+Consider current investigation complete.
+
+## Required From Project Owner
+
+Run /app/docker/decide.sh to make a decision.
+
+## Response Format
+
+Edit this file with:
+**Project Owner Decision**: [A/B/C]
+**Approved By**: [Your name]
+NEXTStepSFILE
+        sed -i "s/%DATE%/$(date '+%Y-%m-%d %H:%M:%S')/g" "$next_steps_dir/next-steps-001.md"
+        
+        log_info "Next steps escalation at $next_steps_dir/next-steps-001.md"
+        log_info "Run /app/docker/decide.sh to make a decision"
+        
+        # Wait for project owner decision
+        local decision_timeout=3600
+        local decision_start=$(date +%s)
+        local decision_made=false
+        
+        while [ "$decision_made" = "false" ]; do
+            local current_time=$(date +%s)
+            local elapsed=$((current_time - decision_start))
+            
+            [ $elapsed -gt $decision_timeout ] && log_warn "Decision timeout" && break
+            
+            if grep -q "Project Owner Decision" "$next_steps_dir/next-steps-001.md" 2>/dev/null &&                grep -q "Approved By" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
+                decision_made=true
+                log_info "Project owner decision received!"
+            else
+                sleep 30
+            fi
+        done
+        
+        if [ "$decision_made" = "true" ]; then
+            if grep -qi "Project Owner Decision: A" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
+                log_info "Option A: Creating continuation project..."
+                local next_project_name="${project_name}-continued"
+                cat > "$INPUT_DIR/${next_project_name}.md" << EOF
+# Continuation: $project_name
+
+**Project Title**: $next_project_name
+
+**Problem Statement**: 
+Continue investigation based on next steps identified in $project_name.
+
+**Goals/Objectives**:
+- Implement proposed next steps from previous investigation
+
+**Priority**: High
+EOF
+                log_info "Created continuation project: $next_project_name"
+                
+            elif grep -qi "Project Owner Decision: B" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
+                log_info "Option B: Saving next steps for future work"
+                echo "# Next Steps: $project_name" > "$project_dir/next-steps.md"
+                echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/next-steps.md"
+                echo "" >> "$project_dir/next-steps.md"
+                echo "$summary" >> "$project_dir/next-steps.md"
+            fi
+            
+            mkdir -p "$DEC_DIR/approved/$project_name"
+            mv "$next_steps_dir/next-steps-001.md" "$DEC_DIR/approved/$project_name/"
+        fi
+    fi
 }
 
 # Update task status in delegations.md

@@ -105,7 +105,19 @@ cat /app/decisions/pending/[project]/decision-001.md
    - **B) Approximate**: Implement simplified versions
    - **C) Theoretical Reference**: Document without implementation (default)
 
+2. **Next Steps Escalation**: When the summary contains proposed next steps:
+   - **A) Continue**: Start a new investigation project with the next steps
+   - **B) Document**: Save next steps for future consideration
+   - **C) End**: Consider investigation complete as-is
+
 **To respond to a decision:**
+```bash
+# Interactive decision dialog (recommended)
+/app/docker/decide.sh
+
+# Or edit the decision file manually
+cat /app/decisions/pending/[project]/decision-001.md
+```
 Edit the decision file and add your response:
 ```
 **Project Owner Decision**: [A/B/C]
@@ -266,4 +278,5 @@ DEBUG_LOG=false docker-compose up
 ./run.sh              # Start supervisor (monitors input/)
 ./run.sh interactive  # Bash shell
 ./run.sh monitor      # Status dashboard
+./run.sh debug        # Supervisor with debug logging to /app/communication/debug.log
 ```

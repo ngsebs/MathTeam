@@ -91,6 +91,15 @@ echo ""
 
 # Parse command line arguments
 MODE="${1:-supervisor}"
+DEBUG_LOG="${DEBUG_LOG:-true}"
+
+# Handle debug mode flag
+if [ "$MODE" = "debug" ]; then
+    MODE="supervisor"
+    DEBUG_LOG="true"
+    echo "Debug mode enabled - detailed logging to /app/communication/debug.log"
+    echo ""
+fi
 
 case "$MODE" in
     supervisor)
@@ -110,7 +119,13 @@ case "$MODE" in
         ;;
     *)
         echo "Unknown mode: $MODE"
-        echo "Usage: $0 [supervisor|interactive|monitor]"
+        echo "Usage: $0 [supervisor|interactive|monitor|debug]"
+        echo ""
+        echo "Modes:"
+        echo "  supervisor   - Start supervisor (monitors input/) [default]"
+        echo "  interactive  - Bash shell for manual commands"
+        echo "  monitor      - Status dashboard"
+        echo "  debug        - Supervisor with detailed debug logging"
         exit 1
         ;;
 esac
@@ -140,6 +155,7 @@ docker run \
     -w /app \
     -e OLLAMA_HOST=host.docker.internal:11434 \
     -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+    -e DEBUG_LOG="$DEBUG_LOG" \
     ${SUPERVISOR_MODEL:+-e SUPERVISOR_MODEL="$SUPERVISOR_MODEL"} \
     ${CREATIVE_MATH_MODEL:+-e CREATIVE_MATH_MODEL="$CREATIVE_MATH_MODEL"} \
     ${SENIOR_MATH_MODEL:+-e SENIOR_MATH_MODEL="$SENIOR_MATH_MODEL"} \
