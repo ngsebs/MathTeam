@@ -264,12 +264,16 @@ Propose 2-3 concrete theorems or mathematical statements that can be explored co
     update_task_status "$project_name" "TASK-003" "In Progress"
     update_progress "$project_name" "Senior Mathematician" "Reviewing proposed theorems"
     
+    # Read theorems file with fallback
+    local theorems_for_review=""
+    [ -f "$project_dir/theorems/proposed.md" ] && theorems_for_review=$(cat "$project_dir/theorems/proposed.md")
+    
     local review_prompt="You are a Senior Mathematician. Critically review these proposed theorems:
 
 Project: $project_name
 
 Proposed Theorems:
-$(cat "$project_dir/theorems/proposed.md")
+${theorems_for_review:-Not available (Ollama may have been unavailable)}
 
 For each theorem, provide:
 1. **Feasibility**: Can this be computationally verified?
@@ -296,15 +300,21 @@ Be rigorous but open to innovative approaches."
     update_task_status "$project_name" "TASK-004" "In Progress"
     update_progress "$project_name" "Python Coder" "Implementing mathematical concepts"
     
+    # Read theorems and review files with fallback
+    local theorems_for_code=""
+    local review_for_code=""
+    [ -f "$project_dir/theorems/proposed.md" ] && theorems_for_code=$(cat "$project_dir/theorems/proposed.md")
+    [ -f "$project_dir/review/critique.md" ] && review_for_code=$(cat "$project_dir/review/critique.md")
+    
     local code_prompt="You are a Python Coder. Implement computational investigation for this project:
 
 Project: $project_name
 
 Theorems to implement:
-$(cat "$project_dir/theorems/proposed.md")
+${theorems_for_code:-Not available (Ollama may have been unavailable)}
 
 Review notes:
-$(cat "$project_dir/review/critique.md")
+${review_for_code:-Not available (Ollama may have been unavailable)}
 
 Write Python code that:
 1. Implements the key mathematical concepts
@@ -331,12 +341,16 @@ Use sympy for symbolic math, numpy for numerical computation."
     update_task_status "$project_name" "TASK-005" "In Progress"
     update_progress "$project_name" "Tester" "Creating test suite"
     
+    # Read implementation file with fallback
+    local impl_for_test=""
+    [ -f "$project_dir/implementation/solution.py" ] && impl_for_test=$(cat "$project_dir/implementation/solution.py")
+    
     local test_prompt="You are a Tester. Create comprehensive tests for this implementation:
 
 Project: $project_name
 
 Implementation:
-$(cat "$project_dir/implementation/solution.py")
+${impl_for_test:-Not available (Ollama may have been unavailable)}
 
 Create pytest tests that:
 1. Test core mathematical functions
@@ -379,21 +393,32 @@ Format as valid pytest code with assertions."
     log_info "Phase 5: Generating project summary..."
     update_progress "$project_name" "Supervisor" "Compiling final summary"
     
+    # Read generated files with fallback content if files don't exist
+    local analysis_content=""
+    local theorems_content=""
+    local review_content=""
+    local test_results_content=""
+    
+    [ -f "$project_dir/theorems/analysis.md" ] && analysis_content=$(cat "$project_dir/theorems/analysis.md")
+    [ -f "$project_dir/theorems/proposed.md" ] && theorems_content=$(cat "$project_dir/theorems/proposed.md")
+    [ -f "$project_dir/review/critique.md" ] && review_content=$(cat "$project_dir/review/critique.md")
+    [ -f "$project_dir/tests/results.txt" ] && test_results_content=$(cat "$project_dir/tests/results.txt")
+    
     local summary_prompt="You are the Supervisor. Compile a comprehensive summary of this investigation:
 
 Project: $project_name
 
 Analysis:
-$(cat "$project_dir/theorems/analysis.md")
+${analysis_content:-Not available (Ollama may have been unavailable)}
 
 Theorems Proposed:
-$(cat "$project_dir/theorems/proposed.md")
+${theorems_content:-Not available (Ollama may have been unavailable)}
 
 Review:
-$(cat "$project_dir/review/critique.md")
+${review_content:-Not available (Ollama may have been unavailable)}
 
 Test Results:
-$(cat "$project_dir/tests/results.txt")
+${test_results_content:-Not available (tests may have failed)}
 
 Provide:
 1. Executive summary (2-3 sentences)
