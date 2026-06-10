@@ -802,7 +802,7 @@ Run /app/docker/decide.sh to make a decision.
 
 Edit this file with:
 **Project Owner Decision**: [A/B/C]
-**Approved By**: [Your name]
+**Signature**: [Your name]
 NEXTStepSFILE
         sed -i "s/%DATE%/$(date '+%Y-%m-%d %H:%M:%S')/g" "$next_steps_dir/next-steps-001.md"
         
@@ -820,7 +820,7 @@ NEXTStepSFILE
             
             [ $elapsed -gt $decision_timeout ] && log_warn "Decision timeout" && break
             
-            if grep -q "Project Owner Decision" "$next_steps_dir/next-steps-001.md" 2>/dev/null &&                grep -q "Approved By" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
+            if grep -q "Project Owner Decision" "$next_steps_dir/next-steps-001.md" 2>/dev/null &&                grep -q "Signature" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
                 decision_made=true
                 log_info "Project owner decision received!"
             else
