@@ -79,11 +79,11 @@ done
 # Sort projects
 sorted_indices=$(for i in "${!project_list[@]}"; do echo "$i"; done | sort -n)
 
-# List projects sorted
+# List projects sorted and build number-to-project mapping
 echo -e "${BOLD}Pending Decisions:${NC}"
 echo "─────────────────────────────────────────────────"
 project_num=1
-declare -A num_to_project
+declare -a num_to_project
 for idx in $sorted_indices; do
     proj="${project_list[$idx]}"
     echo -e "  ${CYAN}[$project_num]${NC} $proj"
