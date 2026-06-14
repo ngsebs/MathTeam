@@ -181,6 +181,39 @@ decisions/
 
 **Key Insight:** All computation and next_steps decisions route to `approved/` because every option represents a valid choice. Only general-type decisions where the project owner explicitly "rejects" route to `rejected/`.
 
+### Non-Blocking Workflow
+
+The decision workflow is **non-blocking** - the supervisor creates decision files and continues processing immediately:
+
+```
+1. Supervisor detects decision needed
+   ↓
+2. Creates file in /decisions/pending/[project]/
+   ↓
+3. Continues immediately (non-blocking)
+   ↓
+4. Project Owner reviews when convenient
+   ↓
+5. Runs decide.sh to process decision
+   ↓
+6. Decision routes to approved/ or rejected/
+```
+
+**Benefits:**
+- Supervisor can process multiple projects in parallel
+- Project owner decides on their own schedule
+- No timeout pressure or workflow blocking
+
+### Decision File Format
+
+Each decision file includes:
+- **Decision ID**: Unique identifier (e.g., DEC-001, NEXT-001)
+- **Decision Type**: computation, next_steps, or general
+- **Status**: Pending → Approved/Rejected
+- **Options**: Clear A/B/C choices with descriptions
+- **Instructions**: How to respond and route info
+- **Response Format**: Template for project owner to fill in
+
 
 ## Quick Start
 
