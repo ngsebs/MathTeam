@@ -423,6 +423,8 @@ Output revised theorems in the same format:
     
     update_task_status "$project_name" "TASK-003" "Completed"
     
+    update_task_status "$project_name" "TASK-003" "Completed"
+    
     # Phase 2.5: Decision Escalation - Project Owner Input
     # Check if any theorems are analytically sound but cannot be computationally represented
     log_info "Phase 2.5: Checking for theorems requiring project owner decision..."
@@ -437,18 +439,37 @@ Output revised theorems in the same format:
     local theorems_needing_decision=""
     
     # Patterns indicating analytically sound but computationally challenging theorems
-    if echo "$review_lower" | grep -qE "analytically sound|mathematically valid|mathematically sound|conceptually correct"; then
-        if echo "$review_lower" | grep -qE "cannot be computed|not computationally|cannot verify computationally|computationally infeasible|no practical algorithm|undecidable|np-complete|exponential complexity"; then
-            needs_decision=true
-            theorems_needing_decision="Theorems flagged as mathematically sound but computationally challenging"
-        fi
+    # Check for multiple indicators to reduce false positives
+    local sound_count=0
+    local challenging_count=0
+    
+    # Indicators of mathematical validity
+    if echo "$review_lower" | grep -qE "analytically sound|mathematically valid|mathematically sound|conceptually correct|proven|verified"; then
+        sound_count=$((sound_count + 1))
+    fi
+    
+    # Indicators of computational challenge
+    if echo "$review_lower" | grep -qE "cannot be computed|not computationally|cannot verify computationally|computationally infeasible|no practical algorithm|undecidable|np-complete|exponential complexity|intractable|no closed form"; then
+        challenging_count=$((challenging_count + 1))
+    fi
+    
+    # Also check for explicit flag
+    if echo "$review_lower" | grep -qE "requires.*decision|project owner.*decision|needs.*approval|escalate"; then
+        challenging_count=$((challenging_count + 1))
+    fi
+    
+    # Decision needed if both conditions present or explicit flag
+    if [ $sound_count -gt 0 ] && [ $challenging_count -gt 0 ]; then
+        needs_decision=true
+        theorems_needing_decision="Theorems flagged as mathematically sound but computationally challenging"
     fi
     
     if [ "$needs_decision" = "true" ]; then
         log_warn "Theorems identified as analytically sound but computationally problematic"
+        log_info "Creating decision record for project owner review..."
         
         # Create decision record for project owner
-        # Naming: decision-001.md, decision-002.md, etc. (unified naming)
+        # Non-blocking: create file and continue - project owner decides asynchronously
         local decision_dir="$DEC_DIR/pending/$project_name"
         mkdir -p "$decision_dir"
         
@@ -457,130 +478,77 @@ Output revised theorems in the same format:
         decision_num=$((decision_num + 1))
         local decision_filename=$(printf "decision-%03d.md" "$decision_num")
         
-        cat > "$decision_dir/$decision_filename" << EOF
+        cat > "$decision_dir/$decision_filename" << 'EOFDECISION'
 # Decision Record: Theorems Requiring Project Owner Input
 
-**Decision ID**: DEC-001
-**Project**: $project_name
-**Date Created**: $(date '+%Y-%m-%d %H:%M:%S')
+**Decision ID**: DEC-DECNUM
+**Project**: PROJECTNAME
+**Decision Type**: computation
+**Date Created**: DATETIME
 **Status**: Pending
 
 ## Decision Summary
 
 Some theorems have been identified as mathematically valid/analytically sound but present computational challenges for implementation.
 
-## Background
+## Context
 
-The Senior Mathematician has reviewed the proposed theorems and identified that certain theorems are:
-- Mathematically correct and significant
-- But cannot be practically implemented with current computational methods
+The Senior Mathematician's review flagged the following theorems as mathematically sound but computationally problematic:
 
-## Theorems Requiring Decision
-
-$theorems_needing_decision
-
-## Senior Mathematician Assessment
-
-$(cat "$project_dir/review/critique.md")
+THMDBLOCK
 
 ## Options
 
 ### Option A: Skip Implementation
-**Proceed with implementation of only computationally feasible theorems**
-- The mathematically sound theorems will be documented but not implemented
-- Focus on what can be computed and verified
-- May limit scope of investigation
+Document the theorems as theoretical results only. No implementation will be provided.
 
 ### Option B: Approximate Implementation
-**Implement simplified or approximate versions**
-- Use numerical approximations where analytical solutions are infeasible
-- May reduce precision but allows computational exploration
-- Document limitations in implementation
+Implement a simplified/approximate version that captures the essence but may not be exact.
 
-### Option C: Include as Theoretical Reference
-**Document theorems in final report without implementation**
-- Theorems are valid but marked as "theoretical only"
-- Future work may include implementation when methods become available
-- Does not block current investigation
+### Option C: Theoretical Reference
+Include the theorems in the documentation as theoretical references with analysis but no implementation.
 
-## Recommendation
+## How to Respond
 
-The Senior Mathematician recommends: **Option C** (Include as Theoretical Reference)
-
-## Required From Project Owner
-
-- [ ] Review the mathematically sound but computationally challenging theorems
-- [ ] Select preferred handling approach (A, B, or C)
-- [ ] Respond in this file or via communication thread
-
-## Response Format
-
-To approve a decision, add your response below:
+Edit this file to add your decision:
 
 ```
 **Project Owner Decision**: [A/B/C]
 **Rationale**: [Your reasoning]
 **Signature**: [Your name]
-**Date**: $(date '+%Y-%m-%d %H:%M:%S')
+**Date**: [Today's date]
 ```
-EOF
-        
-        log_info "Decision record created at $decision_dir/$decision_filename"
-        update_progress "$project_name" "Supervisor" "Awaiting project owner decision on computationally problematic theorems"
-        
-        # Wait for project owner decision with polling
-        local decision_timeout=3600  # 1 hour timeout
-        local decision_start=$(date +%s)
-        local decision_made=false
-        
-        log_info "Waiting for project owner decision (timeout: ${decision_timeout}s)..."
-        
-        while [ "$decision_made" = "false" ]; do
-            local current_time=$(date +%s)
-            local elapsed=$((current_time - decision_start))
-            
-            if [ $elapsed -gt $decision_timeout ]; then
-                log_warn "Decision timeout reached. Proceeding with default (Option C: Theoretical Reference)."
-                update_progress "$project_name" "Supervisor" "Decision timeout - defaulting to Option C"
-                
-                # Add default decision
-                cat >> "$decision_dir/$decision_filename" << EOF
 
-## Default Decision (Timeout)
+## Routing
 
-**Project Owner Decision**: C (Default - Timeout)
-**Rationale**: Decision timeout - defaulting to including theorems as theoretical reference
-**Date**: $(date '+%Y-%m-%d %H:%M:%S')
-EOF
-                break
-            fi
-            
-            # Check for decision response
-            # Check for decision response (looking for Project Owner Decision + Signature)
-            if grep -q "Project Owner Decision" "$decision_dir/$decision_filename" 2>/dev/null; then
-                if grep -q "Signature" "$decision_dir/$decision_filename" 2>/dev/null; then
-                    decision_made=true
-                    log_info "Project owner decision received!"
-                    update_progress "$project_name" "Supervisor" "Project owner decision received"
-                fi
-            fi
-            
-            if [ "$decision_made" = "false" ]; then
-                log_info "Waiting for decision... (${elapsed}s elapsed)"
-                sleep 30  # Check every 30 seconds
-            fi
-        done
+When processed via `/app/docker/decide.sh`, this decision will be moved to:
+- `/decisions/approved/PROJECTNAME/` (all options are valid choices)
+
+## Instructions
+
+Run the decision tool to process when ready:
+```bash
+docker exec pent-eam-math-team /app/docker/decide.sh
+```
+EOFDECISION
         
-        # Move decision to approved/ directory (all options represent valid choices)
-        # Option A/B/C in computation context all go to approved/
-        # - A: Skip implementation → documented decision
-        # - B: Approximate → chosen path
-        # - C: Theoretical Reference → documented decision
-        log_info "Routing decision to approved/ directory"
-        mkdir -p "$DEC_DIR/approved/$project_name"
-        mv "$decision_dir/$decision_filename" "$DEC_DIR/approved/$project_name/"
+        # Replace placeholders
+        sed -i "s/DEC-DECNUM/DEC-$(printf '%03d' "$decision_num")/g" "$decision_dir/$decision_filename"
+        sed -i "s/PROJECTNAME/$project_name/g" "$decision_dir/$decision_filename"
+        sed -i "s/DATETIME/$(date '+%Y-%m-%d %H:%M:%S')/g" "$decision_dir/$decision_filename"
+        sed -i "s/THMDBLOCK/$theorems_needing_decision/g" "$decision_dir/$decision_filename"
+        
+        log_info "Decision record created: $decision_dir/$decision_filename"
+        log_warn "PROJECT OWNER ACTION REQUIRED: Review decision at $decision_dir/$decision_filename"
+        update_progress "$project_name" "Supervisor" "Awaiting project owner decision - see $decision_filename"
+        update_task_status "$project_name" "TASK-005" "In Progress"
+        
+        # Non-blocking: continue processing - project owner can decide asynchronously
+        log_info "Continuing with next phases. Use decide.sh to process decision when ready."
+        
     else
         log_info "No decision escalation needed - all theorems are computationally feasible"
+        update_task_status "$project_name" "TASK-005" "Completed"
     fi
     
     # Phase 3: Python Coder - Implement
@@ -834,9 +802,10 @@ EOF
     log_info "Investigation complete for: $project_name"
     update_progress "$project_name" "Supervisor" "Investigation complete"
 
-    # Phase 5.5: Handle next steps escalation
+    # Phase 5.5: Handle next steps escalation (non-blocking)
+    # Create decision file and continue - process action asynchronously
     if echo "$summary" | grep -qiE "next step|further investigation|future work|recommended|proposed follow"; then
-        log_info "Phase 5.5: Summary contains next steps - escalating to Project Owner..."
+        log_info "Phase 5.5: Summary contains next steps - creating escalation for Project Owner..."
         
         local next_steps_dir="$DEC_DIR/pending/$project_name"
         mkdir -p "$next_steps_dir"
@@ -847,11 +816,12 @@ EOF
         local next_steps_filename=$(printf "decision-%03d.md" "$decision_num")
         
         cat > "$next_steps_dir/$next_steps_filename" << 'NEXTStepSFILE'
-# Next Steps Escalation: $project_name
+# Next Steps Escalation: PROJECTNAME
 
-**Decision ID**: NEXT-001
-**Project**: $project_name
-**Date Created**: %DATE%
+**Decision ID**: NEXT-DECNUM
+**Project**: PROJECTNAME
+**Decision Type**: next_steps
+**Date Created**: DATETIME
 **Status**: Pending
 
 ## Summary
@@ -860,7 +830,7 @@ The investigation has identified potential next steps for further work.
 
 ## Proposed Next Steps
 
-See the summary above for recommended next steps.
+See the summary file for recommended next steps.
 
 ## Options
 
@@ -868,96 +838,51 @@ See the summary above for recommended next steps.
 Create a new project with the proposed next steps.
 
 ### Option B: Document for Future Work
-Save next steps to /app/output/$project_name/next-steps.md.
+Save next steps to /app/output/PROJECTNAME/next-steps.md.
 
 ### Option C: End Investigation Here
 Consider current investigation complete.
 
-## Required From Project Owner
+## How to Respond
 
-Run /app/docker/decide.sh to make a decision.
+Edit this file to add your decision:
 
-## Response Format
-
-Edit this file with:
+```
 **Project Owner Decision**: [A/B/C]
+**Rationale**: [Your reasoning]
 **Signature**: [Your name]
+**Date**: [Today's date]
+```
+
+## Routing
+
+When processed via `/app/docker/decide.sh`, this decision will be moved to:
+- `/decisions/approved/PROJECTNAME/` (all options are valid choices)
+- Option A will trigger creation of a continuation project
+
+## Instructions
+
+Run the decision tool to process when ready:
+```bash
+docker exec pent-eam-math-team /app/docker/decide.sh
+```
 NEXTStepSFILE
-        sed -i "s/%DATE%/$(date '+%Y-%m-%d %H:%M:%S')/g" "$next_steps_dir/$next_steps_filename"
         
-        log_info "Next steps escalation at $next_steps_dir/$next_steps_filename"
-        log_info "Run /app/docker/decide.sh to make a decision"
+        # Replace placeholders
+        sed -i "s/NEXT-DECNUM/NEXT-$(printf '%03d' "$decision_num")/g" "$next_steps_dir/$next_steps_filename"
+        sed -i "s/PROJECTNAME/$project_name/g" "$next_steps_dir/$next_steps_filename"
+        sed -i "s/DATETIME/$(date '+%Y-%m-%d %H:%M:%S')/g" "$next_steps_dir/$next_steps_filename"
         
-        # Wait for project owner decision
-        local decision_timeout=3600
-        local decision_start=$(date +%s)
-        local decision_made=false
+        log_info "Next steps decision created: $next_steps_dir/$next_steps_filename"
+        log_warn "PROJECT OWNER ACTION REQUIRED: Review next steps at $next_steps_dir/$next_steps_filename"
         
-        while [ "$decision_made" = "false" ]; do
-            local current_time=$(date +%s)
-            local elapsed=$((current_time - decision_start))
-            
-            [ $elapsed -gt $decision_timeout ] && log_warn "Decision timeout" && break
-            
-            if grep -q "Project Owner Decision" "$next_steps_dir/$next_steps_filename" 2>/dev/null &&                grep -q "Signature" "$next_steps_dir/$next_steps_filename" 2>/dev/null; then
-                decision_made=true
-                log_info "Project owner decision received!"
-            else
-                sleep 30
-            fi
-        done
-        
-        if [ "$decision_made" = "true" ]; then
-            if grep -qi "Project Owner Decision: A" "$next_steps_dir/$next_steps_filename" 2>/dev/null; then
-                log_info "Option A: Creating continuation project..."
-                local next_project_name="${project_name}-continued"
-                
-                # Extract custom prompt if provided
-                local custom_prompt_text=""
-                if grep -q "Custom Prompt" "$next_steps_dir/$next_steps_filename" 2>/dev/null; then
-                    custom_prompt_text=$(grep "Custom Prompt" "$next_steps_dir/$next_steps_filename" 2>/dev/null | sed 's/.*Custom Prompt.*: *//')
-                fi
-                
-                cat > "$INPUT_DIR/${next_project_name}.md" << EOF
-# Continuation: $project_name
-
-**Project Title**: $next_project_name
-
-**Problem Statement**: 
-Continue investigation based on next steps identified in $project_name.
-
-**Background/Context**:
-Previous investigation completed with proposed next steps.
-
-**Goals/Objectives**:
-- Implement proposed next steps from previous investigation
-
-**Priority**: High
-EOF
-                
-                # Append custom prompt if provided
-                if [ -n "$custom_prompt_text" ]; then
-                    echo "" >> "$INPUT_DIR/${next_project_name}.md"
-                    echo "**Project Owner Instructions**: $custom_prompt_text" >> "$INPUT_DIR/${next_project_name}.md"
-                fi
-                
-                log_info "Created continuation project: $next_project_name"
-                
-            elif grep -qi "Project Owner Decision: B" "$next_steps_dir/$next_steps_filename" 2>/dev/null; then
-                log_info "Option B: Saving next steps for future work"
-                echo "# Next Steps: $project_name" > "$project_dir/next-steps.md"
-                echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/next-steps.md"
-                echo "" >> "$project_dir/next-steps.md"
-                echo "$summary" >> "$project_dir/next-steps.md"
-            fi
-            
-            # Route to approved/ (all options represent valid choices)
-            # Option A/B/C in next_steps context all go to approved/
-            log_info "Routing decision to approved/ directory"
-            mkdir -p "$DEC_DIR/approved/$project_name"
-            mv "$next_steps_dir/$next_steps_filename" "$DEC_DIR/approved/$project_name/"
-        fi
+        # Non-blocking: continue - project owner decides via decide.sh
+        log_info "Investigation complete. Use decide.sh to process next steps decision when ready."
+    else
+        log_info "Investigation complete for: $project_name"
     fi
+}
+
 }
 
 # Update task status in delegations.md

@@ -242,18 +242,25 @@ timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     [ -n "$free_form_prompt" ] && echo "**Free-form Prompt**: " && echo "$free_form_prompt" && echo ""
 } >> "$decision_file"
 
-# Move to appropriate directory based on decision type
-# Options A and C go to approved, option B for general decisions is "Reject" -> rejected/
-if [ "$decision" = "B" ] && [ "$decision_type" = "general" ]; then
-    # Option B for general decisions is "Reject"
+# Move to appropriate directory based on decision type and option
+# 
+# Routing Rules:
+# - computation/next_steps decisions: ALL options (A/B/C) go to approved/
+# - general decisions: Option A→approved/, Option B→rejected/, Option C→approved/
+#
+if [ "$decision_type" = "general" ] && [ "$decision" = "B" ]; then
+    # Option B for general decisions is "Reject" -> rejected/
     mkdir -p "$DECISIONS_DIR/rejected/$selected_project"
     mv "$decision_file" "$DECISIONS_DIR/rejected/$selected_project/"
     echo ""
     echo -e "${RED}⚠ Decision recorded as REJECTED.${NC}"
 else
-    # A (Approve/Continue/Skip) and C (Request More Info/Theoretical/End) go to approved
+    # A (Approve/Continue/Skip), B (Approximate/Document), and C (Request Info/Theoretical/End)
+    # All valid choices go to approved/
     mkdir -p "$DECISIONS_DIR/approved/$selected_project"
     mv "$decision_file" "$DECISIONS_DIR/approved/$selected_project/"
+    echo ""
+    echo -e "${GREEN}✓ Decision recorded and saved to approved/.${NC}"
 fi
 
 echo ""
