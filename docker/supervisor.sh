@@ -237,6 +237,7 @@ EOF
 | TASK-004 | Implement approved theorems | Python Coder | High | Pending |
 | TASK-005 | Create test suite | Tester | Medium | Pending |
 | TASK-006 | Validate implementation | Tester | High | Pending |
+| TASK-007 | Fix test failures | Python Coder | High | Pending (as needed) |
 
 ## Completed Tasks
 
@@ -622,16 +623,25 @@ Use sympy for symbolic math, numpy for numerical computation."
     
     update_task_status "$project_name" "TASK-004" "Completed"
     
-    # Phase 4: Tester - Validate
+    # Phase 4: Tester - Validate with Fix Loop
     log_info "Phase 4: Tester validating implementation..."
     update_task_status "$project_name" "TASK-005" "In Progress"
     update_progress "$project_name" "Tester" "Creating test suite"
     
-    # Read implementation file with fallback
-    local impl_for_test=""
-    [ -f "$project_dir/implementation/solution.py" ] && impl_for_test=$(cat "$project_dir/implementation/solution.py")
+    local max_test_iterations=3
+    local test_iteration=0
+    local tests_passed=false
     
-    local test_prompt="You are a Tester. Create comprehensive tests for this implementation:
+    # Test-and-fix loop: iterate until tests pass or max iterations reached
+    while [ "$tests_passed" = "false" ] && [ $test_iteration -lt $max_test_iterations ]; do
+        test_iteration=$((test_iteration + 1))
+        log_info "Test iteration $test_iteration/$max_test_iterations"
+        
+        # Read implementation file with fallback
+        local impl_for_test=""
+        [ -f "$project_dir/implementation/solution.py" ] && impl_for_test=$(cat "$project_dir/implementation/solution.py")
+        
+        local test_prompt="You are a Tester. Create comprehensive tests for this implementation:
 
 Project: $project_name
 
@@ -645,41 +655,104 @@ Create pytest tests that:
 4. Include fixtures for test data
 
 Format as valid pytest code with assertions."
+        
+        local tests=$(call_ollama "$model" "$test_prompt")
+        
+        echo "# Tests: $project_name" > "$project_dir/tests/test_solution.py"
+        echo '"""' >> "$project_dir/tests/test_solution.py"
+        echo "Tests for: $project_name" >> "$project_dir/tests/test_solution.py"
+        echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/tests/test_solution.py"
+        echo '"""' >> "$project_dir/tests/test_solution.py"
+        echo "" >> "$project_dir/tests/test_solution.py"
+        echo "import pytest" >> "$project_dir/tests/test_solution.py"
+        echo "import sys" >> "$project_dir/tests/test_solution.py"
+        echo "import os" >> "$project_dir/tests/test_solution.py"
+        echo "" >> "$project_dir/tests/test_solution.py"
+        echo "# Add implementation directory to path so tests can import solution module" >> "$project_dir/tests/test_solution.py"
+        echo "_IMPL_DIR = os.path.join(os.path.dirname(__file__), '..', 'implementation')" >> "$project_dir/tests/test_solution.py"
+        echo "if _IMPL_DIR not in sys.path:" >> "$project_dir/tests/test_solution.py"
+        echo "    sys.path.insert(0, _IMPL_DIR)" >> "$project_dir/tests/test_solution.py"
+        echo "" >> "$project_dir/tests/test_solution.py"
+        write_response "$project_dir/tests/test_solution.py" "$tests"
+        
+        # Run the tests
+        log_info "Running tests..."
+        update_progress "$project_name" "Tester" "Running validation tests (iteration $test_iteration)"
+        
+        if source /app/.venv/bin/activate 2>/dev/null && python -m pytest "$project_dir/tests/test_solution.py" -v > "$project_dir/tests/results.txt" 2>&1; then
+            log_info "✓ All tests passed!"
+            tests_passed=true
+        else
+            log_warn "Tests failed - capturing error details"
+            
+            # Extract error information for the developer
+            local error_summary=$(grep -E "^(FAILED|PASSED|ERROR|====.*ERROR|====.*FAILED)" "$project_dir/tests/results.txt" 2>/dev/null | head -20 || echo "Test execution failed")
+            local error_context=$(grep -A 5 "AssertionError\|Error\|FAILED" "$project_dir/tests/results.txt" 2>/dev/null | head -30 || echo "See results.txt for details")
+            
+            log_info "Test errors detected. Sending back to Python Coder for fixes..."
+            update_progress "$project_name" "Python Coder" "Fixing test failures (iteration $test_iteration)"
+            update_task_status "$project_name" "TASK-007" "In Progress"
+            
+            # Send to Python Coder for fixes (only if not last iteration)
+            if [ $test_iteration -lt $max_test_iterations ]; then
+                local fix_prompt="You are a Python Coder. The implementation has test failures that need to be fixed.
+
+Project: $project_name
+
+Original Implementation:
+${impl_for_test:-Not available}
+
+Test Errors:
+${error_summary}
+
+Error Context:
+${error_context}
+
+Please fix the implementation to address these test failures. Ensure:
+1. All test assertions pass
+2. Edge cases are handled properly
+3. Mathematical correctness is maintained
+4. Code is clean and well-documented
+
+Return the corrected implementation as a code block."
+                
+                local fixed_implementation=$(call_ollama "$PYTHON_CODER_MODEL" "$fix_prompt")
+                
+                # Extract just the code from the response
+                if echo "$fixed_implementation" | grep -q "```python"; then
+                    fixed_implementation=$(echo "$fixed_implementation" | sed -n '/```python/,/```/p' | sed '1d;$d')
+                elif echo "$fixed_implementation" | grep -q "```"; then
+                    fixed_implementation=$(echo "$fixed_implementation" | sed -n '/```/,/```/p' | sed '1d;$d')
+                fi
+                
+                echo "# Implementation: $project_name" > "$project_dir/implementation/solution.py"
+                echo '"""' >> "$project_dir/implementation/solution.py"
+                echo "Implementation for: $project_name" >> "$project_dir/implementation/solution.py"
+                echo "Fixed iteration: $test_iteration" >> "$project_dir/implementation/solution.py"
+                echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/implementation/solution.py"
+                echo '"""' >> "$project_dir/implementation/solution.py"
+                echo "" >> "$project_dir/implementation/solution.py"
+                write_response "$project_dir/implementation/solution.py" "$fixed_implementation"
+                
+                log_info "Implementation updated. Re-running tests..."
+                update_progress "$project_name" "Python Coder" "Implementation fixed, awaiting re-test"
+                update_task_status "$project_name" "TASK-007" "Completed"
+            else
+                log_error "Max test iterations reached. Manual intervention required."
+            fi
+        fi
+    done
     
-    local tests=$(call_ollama "$model" "$test_prompt")
-    
-    echo "# Tests: $project_name" > "$project_dir/tests/test_solution.py"
-    echo '"""' >> "$project_dir/tests/test_solution.py"
-    echo "Tests for: $project_name" >> "$project_dir/tests/test_solution.py"
-    echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/tests/test_solution.py"
-    echo '"""' >> "$project_dir/tests/test_solution.py"
-    echo "" >> "$project_dir/tests/test_solution.py"
-    echo "import pytest" >> "$project_dir/tests/test_solution.py"
-    echo "import sys" >> "$project_dir/tests/test_solution.py"
-    echo "import os" >> "$project_dir/tests/test_solution.py"
-    echo "" >> "$project_dir/tests/test_solution.py"
-    echo "# Add implementation directory to path so tests can import solution module" >> "$project_dir/tests/test_solution.py"
-    echo "_IMPL_DIR = os.path.join(os.path.dirname(__file__), '..', 'implementation')" >> "$project_dir/tests/test_solution.py"
-    echo "if _IMPL_DIR not in sys.path:" >> "$project_dir/tests/test_solution.py"
-    echo "    sys.path.insert(0, _IMPL_DIR)" >> "$project_dir/tests/test_solution.py"
-    echo "" >> "$project_dir/tests/test_solution.py"
-    write_response "$project_dir/tests/test_solution.py" "$tests"
-    
-    update_task_status "$project_name" "TASK-005" "Completed"
-    update_task_status "$project_name" "TASK-006" "In Progress"
-    
-    # Run the tests
-    log_info "Running tests..."
-    update_progress "$project_name" "Tester" "Running validation tests"
-    
-    if source /app/.venv/bin/activate 2>/dev/null && python -m pytest "$project_dir/tests/test_solution.py" -v > "$project_dir/tests/results.txt" 2>&1; then
-        local test_results="All tests passed ✓"
+    # Record test results
+    if [ "$tests_passed" = "true" ]; then
+        echo "" >> "$project_dir/tests/results.txt"
+        echo "✓ All tests passed after $test_iteration iteration(s)" >> "$project_dir/tests/results.txt"
     else
-        local test_results="Tests completed with output in results.txt"
+        echo "" >> "$project_dir/tests/results.txt"
+        echo "⚠ Tests did not pass after $max_test_iterations iterations. Manual review recommended." >> "$project_dir/tests/results.txt"
     fi
     
-    echo "$test_results" >> "$project_dir/tests/results.txt"
-    
+    update_task_status "$project_name" "TASK-005" "Completed"
     update_task_status "$project_name" "TASK-006" "Completed"
     
     # Phase 5: Generate Summary

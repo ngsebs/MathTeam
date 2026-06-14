@@ -91,12 +91,20 @@ The Supervisor delegates work through phases with built-in feedback loops:
 
 #### Feedback Loops
 
-The workflow includes two important feedback mechanisms:
+The workflow includes three important feedback mechanisms:
 
 **Mathematician Feedback Loop**
 - Senior Mathematician may reject theorems (max 3 iterations)
 - Rejected theorems return to Creative Mathematician with feedback
 - Only approved theorems proceed to implementation
+
+**Tester Fix Loop** ⭐ NEW
+- Tester creates tests and runs them against implementation
+- If tests fail, Python Coder receives error details automatically
+- Python Coder fixes implementation and tests are re-run
+- Loop continues until tests pass or max iterations (3) reached
+- If max iterations reached, manual intervention is flagged
+- This ensures code quality before proceeding to summary
 
 **Project Owner Escalation**
 - When theorems are mathematically valid but computationally infeasible
@@ -382,6 +390,10 @@ The project is self-contained with all necessary agent configurations:
          │
          ▼
 5. Tester creates and runs tests
+         │
+         ├─► PASSED ──────────────────────┐
+         │                                  │
+         └─► FAILED ─► Fix (loop 1-3) ─────┘
          │
          ▼
 6. Supervisor compiles final summary
