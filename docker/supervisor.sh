@@ -883,8 +883,6 @@ NEXTStepSFILE
     fi
 }
 
-}
-
 # Update task status in delegations.md
 update_task_status() {
     local project_name="$1"
