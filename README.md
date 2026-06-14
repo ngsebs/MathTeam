@@ -158,6 +158,30 @@ The dialog will:
 4. Accept signature and optional notes/prompts
 5. Move processed decisions to `/decisions/approved/` or `/decisions/rejected/`
 
+### Decision Routing
+
+**Directory Structure:**
+```
+decisions/
++-- pending/[project]/
+|   +-- decision-001.md    # Auto-increment naming
+|   +-- decision-002.md
++-- approved/[project]/    # All valid decisions (A, B, or C options)
+|   +-- decision-001.md
++-- rejected/[project]/    # Only explicit rejections
+    +-- decision-XXX.md
+```
+
+**Routing Rules:**
+| Decision Type | Option A | Option B | Option C |
+|--------------|----------|----------|----------|
+| Computation | Skip -> approved/ | Approximate -> approved/ | Theoretical -> approved/ |
+| Next Steps | Continue -> approved/ | Document -> approved/ | End -> approved/ |
+| General | Approve -> approved/ | Reject -> rejected/ | Request Info -> approved/ |
+
+**Key Insight:** All computation and next_steps decisions route to `approved/` because every option represents a valid choice. Only general-type decisions where the project owner explicitly "rejects" route to `rejected/`.
+
+
 ## Quick Start
 
 ### Using Docker
