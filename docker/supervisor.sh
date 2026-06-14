@@ -720,10 +720,10 @@ Return the corrected implementation as a code block."
                 local fixed_implementation=$(call_ollama "$PYTHON_CODER_MODEL" "$fix_prompt")
                 
                 # Extract just the code from the response
-                if echo "$fixed_implementation" | grep -q "```python"; then
-                    fixed_implementation=$(echo "$fixed_implementation" | sed -n '/```python/,/```/p' | sed '1d;$d')
-                elif echo "$fixed_implementation" | grep -q "```"; then
-                    fixed_implementation=$(echo "$fixed_implementation" | sed -n '/```/,/```/p' | sed '1d;$d')
+                if echo "$fixed_implementation" | grep -q '```python'; then
+                    fixed_implementation=$(echo "$fixed_implementation" | sed -n '/\`\`\`python/,/\`\`\`/p' | sed '1d;$d')
+                elif echo "$fixed_implementation" | grep -q '```'; then
+                    fixed_implementation=$(echo "$fixed_implementation" | sed -n '/\`\`\`/,/\`\`\`/p' | sed '1d;$d')
                 fi
                 
                 echo "# Implementation: $project_name" > "$project_dir/implementation/solution.py"
