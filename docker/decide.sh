@@ -48,28 +48,44 @@ fi
 echo -e "${YELLOW}You have $pending_count pending decision(s)${NC}"
 echo ""
 
-# Build associative array of projects and their decision files
-declare -A project_files
+# Build list of projects and their decision files (using simple arrays)
+# Associative arrays can have issues in some bash versions
+unset project_list
+declare -a project_list
+unset file_list
+declare -a file_list
+project_index=0
+
 for file in "$DECISIONS_DIR/pending"/*/*.md; do
     if [ ! -f "$file" ]; then
         continue
     fi
     project=$(basename "$(dirname "$file")")
-    if [ -z "${project_files[$project]}" ]; then
-        project_files[$project]="$file"
-    else
-        project_files[$project]="${project_files[$project]}"$'
-'"$file"
+    # Check if project already in list
+    found=false
+    for i in "${!project_list[@]}"; do
+        if [ "${project_list[$i]}" = "$project" ]; then
+            found=true
+            break
+        fi
+    done
+    if [ "$found" = "false" ]; then
+        project_list[$project_index]="$project"
+        file_list[$project_index]="$file"
+        project_index=$((project_index + 1))
     fi
 done
+
+# Sort projects
+sorted_indices=$(for i in "${!project_list[@]}"; do echo "$i"; done | sort -n)
 
 # List projects sorted
 echo -e "${BOLD}Pending Decisions:${NC}"
 echo "─────────────────────────────────────────────────"
-sorted_projects=$(for p in "${!project_files[@]}"; do echo "$p"; done | sort)
 project_num=1
 declare -A num_to_project
-for proj in $sorted_projects; do
+for idx in $sorted_indices; do
+    proj="${project_list[$idx]}"
     echo -e "  ${CYAN}[$project_num]${NC} $proj"
     num_to_project[$project_num]="$proj"
     project_num=$((project_num + 1))
@@ -108,36 +124,26 @@ echo -e "${CYAN}═════════════════════�
 echo -e "${CYAN}Project: ${BOLD}$selected_project${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
 
-# Get decision files for selected project - convert newline-separated to array
-IFS_backup="$IFS"
-IFS=$'\n'
-decision_files=()
-for line in ${project_files[$selected_project]}; do
-    [ -n "$line" ] && decision_files+=("$line")
-done
-IFS="$IFS_backup"
-decision_count=${#decision_files[@]}
-
-# If multiple files, let user select
-if [ $decision_count -gt 1 ]; then
-    echo ""
-    echo -e "${BOLD}Multiple decision files found:${NC}"
-    for i in "${!decision_files[@]}"; do
-        fname=$(basename "${decision_files[$i]}")
-        echo -e "  ${CYAN}[$((i+1))]${NC} $fname"
-    done
-    echo ""
-    echo -e "${BOLD}Select decision file by number (or Enter for first):${NC}"
-    read -r file_selection
-    
-    if [ -n "$file_selection" ] && [ "$file_selection" -ge 1 ] && [ "$file_selection" -le $decision_count ]; then
-        decision_file="${decision_files[$((file_selection-1))]}"
-    else
-        decision_file="${decision_files[0]}"
+# Find the index for selected project
+selected_index=""
+for idx in "${!project_list[@]}"; do
+    if [ "${project_list[$idx]}" = "$selected_project" ]; then
+        selected_index=$idx
+        break
     fi
-else
-    decision_file="${decision_files[0]}"
+done
+
+if [ -z "$selected_index" ]; then
+    echo -e "${RED}Error: Project not found${NC}"
+    exit 1
 fi
+
+# Get decision file
+decision_file="${file_list[$selected_index]}"
+
+# Single decision file per project in current implementation
+decision_count=1
+
 
 # Display the decision
 echo ""
