@@ -448,10 +448,16 @@ Output revised theorems in the same format:
         log_warn "Theorems identified as analytically sound but computationally problematic"
         
         # Create decision record for project owner
+        # Naming: decision-001.md, decision-002.md, etc. (unified naming)
         local decision_dir="$DEC_DIR/pending/$project_name"
         mkdir -p "$decision_dir"
         
-        cat > "$decision_dir/decision-001.md" << EOF
+        # Generate decision filename (auto-increment)
+        local decision_num=$(find "$decision_dir" -name "decision-*.md" 2>/dev/null | wc -l)
+        decision_num=$((decision_num + 1))
+        local decision_filename=$(printf "decision-%03d.md" "$decision_num")
+        
+        cat > "$decision_dir/$decision_filename" << EOF
 # Decision Record: Theorems Requiring Project Owner Input
 
 **Decision ID**: DEC-001
@@ -519,7 +525,7 @@ To approve a decision, add your response below:
 ```
 EOF
         
-        log_info "Decision record created at $decision_dir/decision-001.md"
+        log_info "Decision record created at $decision_dir/$decision_filename"
         update_progress "$project_name" "Supervisor" "Awaiting project owner decision on computationally problematic theorems"
         
         # Wait for project owner decision with polling
@@ -538,7 +544,7 @@ EOF
                 update_progress "$project_name" "Supervisor" "Decision timeout - defaulting to Option C"
                 
                 # Add default decision
-                cat >> "$decision_dir/decision-001.md" << EOF
+                cat >> "$decision_dir/$decision_filename" << EOF
 
 ## Default Decision (Timeout)
 
@@ -550,8 +556,9 @@ EOF
             fi
             
             # Check for decision response
-            if grep -q "Project Owner Decision" "$decision_dir/decision-001.md" 2>/dev/null; then
-                if grep -q "Signature" "$decision_dir/decision-001.md" 2>/dev/null; then
+            # Check for decision response (looking for Project Owner Decision + Signature)
+            if grep -q "Project Owner Decision" "$decision_dir/$decision_filename" 2>/dev/null; then
+                if grep -q "Signature" "$decision_dir/$decision_filename" 2>/dev/null; then
                     decision_made=true
                     log_info "Project owner decision received!"
                     update_progress "$project_name" "Supervisor" "Project owner decision received"
@@ -564,20 +571,14 @@ EOF
             fi
         done
         
-        # Move decision to appropriate directory based on outcome
-        if grep -q "Project Owner Decision: A\|Project Owner Decision: a" "$decision_dir/decision-001.md" 2>/dev/null; then
-            log_info "Project owner chose Option A: Skip implementation"
-            mkdir -p "$DEC_DIR/approved/$project_name"
-            mv "$decision_dir/decision-001.md" "$DEC_DIR/approved/$project_name/"
-        elif grep -q "Project Owner Decision: B\|Project Owner Decision: b" "$decision_dir/decision-001.md" 2>/dev/null; then
-            log_info "Project owner chose Option B: Approximate implementation"
-            mkdir -p "$DEC_DIR/approved/$project_name"
-            mv "$decision_dir/decision-001.md" "$DEC_DIR/approved/$project_name/"
-        else
-            log_info "Project owner chose Option C: Theoretical reference (default)"
-            mkdir -p "$DEC_DIR/approved/$project_name"
-            mv "$decision_dir/decision-001.md" "$DEC_DIR/approved/$project_name/"
-        fi
+        # Move decision to approved/ directory (all options represent valid choices)
+        # Option A/B/C in computation context all go to approved/
+        # - A: Skip implementation → documented decision
+        # - B: Approximate → chosen path
+        # - C: Theoretical Reference → documented decision
+        log_info "Routing decision to approved/ directory"
+        mkdir -p "$DEC_DIR/approved/$project_name"
+        mv "$decision_dir/$decision_filename" "$DEC_DIR/approved/$project_name/"
     else
         log_info "No decision escalation needed - all theorems are computationally feasible"
     fi
@@ -840,7 +841,12 @@ EOF
         local next_steps_dir="$DEC_DIR/pending/$project_name"
         mkdir -p "$next_steps_dir"
         
-        cat > "$next_steps_dir/next-steps-001.md" << 'NEXTStepSFILE'
+        # Generate decision filename (auto-increment, unified naming)
+        local decision_num=$(find "$next_steps_dir" -name "decision-*.md" 2>/dev/null | wc -l)
+        decision_num=$((decision_num + 1))
+        local next_steps_filename=$(printf "decision-%03d.md" "$decision_num")
+        
+        cat > "$next_steps_dir/$next_steps_filename" << 'NEXTStepSFILE'
 # Next Steps Escalation: $project_name
 
 **Decision ID**: NEXT-001
@@ -877,9 +883,9 @@ Edit this file with:
 **Project Owner Decision**: [A/B/C]
 **Signature**: [Your name]
 NEXTStepSFILE
-        sed -i "s/%DATE%/$(date '+%Y-%m-%d %H:%M:%S')/g" "$next_steps_dir/next-steps-001.md"
+        sed -i "s/%DATE%/$(date '+%Y-%m-%d %H:%M:%S')/g" "$next_steps_dir/$next_steps_filename"
         
-        log_info "Next steps escalation at $next_steps_dir/next-steps-001.md"
+        log_info "Next steps escalation at $next_steps_dir/$next_steps_filename"
         log_info "Run /app/docker/decide.sh to make a decision"
         
         # Wait for project owner decision
@@ -893,7 +899,7 @@ NEXTStepSFILE
             
             [ $elapsed -gt $decision_timeout ] && log_warn "Decision timeout" && break
             
-            if grep -q "Project Owner Decision" "$next_steps_dir/next-steps-001.md" 2>/dev/null &&                grep -q "Signature" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
+            if grep -q "Project Owner Decision" "$next_steps_dir/$next_steps_filename" 2>/dev/null &&                grep -q "Signature" "$next_steps_dir/$next_steps_filename" 2>/dev/null; then
                 decision_made=true
                 log_info "Project owner decision received!"
             else
@@ -902,14 +908,14 @@ NEXTStepSFILE
         done
         
         if [ "$decision_made" = "true" ]; then
-            if grep -qi "Project Owner Decision: A" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
+            if grep -qi "Project Owner Decision: A" "$next_steps_dir/$next_steps_filename" 2>/dev/null; then
                 log_info "Option A: Creating continuation project..."
                 local next_project_name="${project_name}-continued"
                 
                 # Extract custom prompt if provided
                 local custom_prompt_text=""
-                if grep -q "Custom Prompt" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
-                    custom_prompt_text=$(grep "Custom Prompt" "$next_steps_dir/next-steps-001.md" 2>/dev/null | sed 's/.*Custom Prompt.*: *//')
+                if grep -q "Custom Prompt" "$next_steps_dir/$next_steps_filename" 2>/dev/null; then
+                    custom_prompt_text=$(grep "Custom Prompt" "$next_steps_dir/$next_steps_filename" 2>/dev/null | sed 's/.*Custom Prompt.*: *//')
                 fi
                 
                 cat > "$INPUT_DIR/${next_project_name}.md" << EOF
@@ -937,7 +943,7 @@ EOF
                 
                 log_info "Created continuation project: $next_project_name"
                 
-            elif grep -qi "Project Owner Decision: B" "$next_steps_dir/next-steps-001.md" 2>/dev/null; then
+            elif grep -qi "Project Owner Decision: B" "$next_steps_dir/$next_steps_filename" 2>/dev/null; then
                 log_info "Option B: Saving next steps for future work"
                 echo "# Next Steps: $project_name" > "$project_dir/next-steps.md"
                 echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/next-steps.md"
@@ -945,8 +951,11 @@ EOF
                 echo "$summary" >> "$project_dir/next-steps.md"
             fi
             
+            # Route to approved/ (all options represent valid choices)
+            # Option A/B/C in next_steps context all go to approved/
+            log_info "Routing decision to approved/ directory"
             mkdir -p "$DEC_DIR/approved/$project_name"
-            mv "$next_steps_dir/next-steps-001.md" "$DEC_DIR/approved/$project_name/"
+            mv "$next_steps_dir/$next_steps_filename" "$DEC_DIR/approved/$project_name/"
         fi
     fi
 }

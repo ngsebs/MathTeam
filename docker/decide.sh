@@ -31,6 +31,7 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 
 # Check for pending decisions - get all .md files recursively
+# Support both old naming (next-steps-*.md) and new naming (decision-*.md)
 pending_count=0
 for file in "$DECISIONS_DIR/pending"/*/*.md; do
     if [ -f "$file" ]; then
