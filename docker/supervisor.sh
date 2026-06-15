@@ -340,20 +340,45 @@ Propose 2-3 concrete theorems or mathematical statements that can be explored co
         local theorems_for_review=""
         [ -f "$project_dir/theorems/proposed.md" ] && theorems_for_review=$(cat "$project_dir/theorems/proposed.md")
         
-        local review_prompt="You are a Senior Mathematician. Critically review these proposed theorems:
+        local review_prompt="You are a Senior Mathematician. Critically review these proposed theorems with emphasis on ANALYTICAL SOUND FOUNDATION:
 
 Project: $project_name
 
 Proposed Theorems:
 ${theorems_for_review:-Not available (Ollama may have been unavailable)}
 
-For each theorem, provide:
-1. **Feasibility**: Can this be computationally verified?
-2. **Significance**: Why does this matter mathematically?
-3. **Potential issues**: Any logical flaws or assumptions?
-4. **Recommendation**: Approve, modify, or reject
+## Review Framework - Analytical Sound Foundation
 
-Be rigorous but open to innovative approaches."
+For each theorem, rigorously evaluate:
+
+### 1. Mathematical Correctness
+   - Are all assumptions explicitly stated?
+   - Are definitions precise and unambiguous?
+   - Is the logical structure sound?
+   - Are there any hidden assumptions?
+
+### 2. Proof Structure
+   - Is the theorem statement well-formed?
+   - Are the hypotheses clearly separated from conclusions?
+   - Does the proposed approach lead to a valid proof?
+   - Are edge cases and boundary conditions addressed?
+
+### 3. Computational Verifiability
+   - Can this theorem be computationally verified?
+   - What are the algorithmic requirements?
+   - Is there a constructive method or counterexample search?
+
+### 4. Theoretical Significance
+   - Does this theorem extend known results?
+   - What is the broader mathematical context?
+   - Are connections to other theorems explicit?
+
+### 5. Recommendations
+   - APPROVED: Analytically sound and ready for implementation
+   - NEEDS_REVISION: Specific concerns to address
+   - REJECTED: Fundamental issues that cannot be fixed
+
+Be rigorous. Identify any weaknesses in the analytical foundation that could undermine the theorem's validity or applicability."
 
         local review=$(call_ollama "$model" "$review_prompt")
         
@@ -372,7 +397,7 @@ Be rigorous but open to innovative approaches."
             log_warn "Senior Mathematician identified issues requiring revision"
             
             # Extract the review content for feedback to Creative Mathematician
-            local revision_prompt="You are a Creative Mathematician. The Senior Mathematician has reviewed your proposed theorems and found issues that need to be addressed:
+            local revision_prompt="You are a Creative Mathematician. The Senior Mathematician has reviewed your proposed theorems and found issues with their ANALYTICAL SOUND FOUNDATION that need to be addressed:
 
 Project: $project_name
 
@@ -382,16 +407,33 @@ ${theorems_for_review}
 Senior Mathematician Feedback:
 ${review}
 
-Please revise the rejected or problematic theorems based on the feedback.
-For each issue:
-1. Acknowledge the concern raised
-2. Either fix the theorem or provide a new approach
-3. Ensure all theorems are computationally verifiable
+## Revision Guidelines
 
-Output revised theorems in the same format:
+For each issue identified by the Senior Mathematician:
+
+### 1. Address Analytical Concerns
+   - Acknowledge the specific concern raised
+   - Fix the weak or flawed parts of the theorem
+   - Strengthen the analytical foundation if needed
+
+### 2. Strengthen Mathematical Rigor
+   - Ensure all assumptions are explicit
+   - Make definitions precise and unambiguous
+   - Ensure logical flow is sound
+   - Address any missing edge cases
+
+### 3. Ensure Computational Verifiability
+   - Maintain the essence of the original theorem
+   - Restructure if needed for computational verification
+   - Ensure there is a constructive approach
+
+### 4. Output Revised Theorems
+Format each revised theorem as:
 - **Theorem [N]**: [Revised formal statement]
-- **Approach**: [How to investigate]
-- **Expected outcome**: [What we might discover]"
+- **Assumptions**: [Explicit conditions]
+- **Approach**: [How to investigate/prove]
+- **Expected outcome**: [What we might discover]
+- **Analytical Strengths**: [Why this is now sound]"
             
             log_info "Sending rejected theorems back to Creative Mathematician for revision..."
             update_progress "$project_name" "Creative Mathematician" "Revising theorems based on Senior Mathematician feedback"
