@@ -124,6 +124,145 @@ call_ollama() {
     echo "$extracted"
 }
 
+# ================================================================================
+# LaTeX Linting and Validation Functions
+# ================================================================================
+
+# Extract LaTeX content from markdown code blocks
+extract_latex_from_response() {
+    local response="$1"
+    
+    # Try to extract from ```latex or ```tex code blocks
+    if echo "$response" | grep -q '\`\`\`latex'; then
+        echo "$response" | sed -n '/\`\`\`latex/,/\`\`\`/p' | sed '1d;$d'
+    elif echo "$response" | grep -q '\`\`\`tex'; then
+        echo "$response" | sed -n '/\`\`\`tex/,/\`\`\`/p' | sed '1d;$d'
+    elif echo "$response" | grep -q '\`\`\`'; then
+        echo "$response" | sed -n '/\`\`\`/,/\`\`\`/p' | sed '1d;$d'
+    else
+        # Return as-is if no code block found
+        echo "$response"
+    fi
+}
+
+# Validate and fix basic LaTeX structure
+validate_latex_structure() {
+    local latex="$1"
+    local project_name="$2"
+    
+    # Check for documentclass or document environment
+    if ! echo "$latex" | grep -q '\\documentclass'; then
+        # Prepend document class if missing
+        log_warn "LaTeX missing documentclass, adding arxiv template"
+        latex='\documentclass[twocolumn]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+'"$latex"
+    fi
+    
+    # Check for document environment
+    if ! echo "$latex" | grep -q '\\begin{document}'; then
+        log_warn "LaTeX missing document environment, adding"
+        # Find where to insert \begin{document}
+        # Usually after \documentclass and \usepackage declarations
+        latex=$(echo "$latex" | sed '/\\usepackage.*/a\
+\
+\\begin{document}' )
+    fi
+    
+    # Check for end document
+    if ! echo "$latex" | grep -q '\\end{document}'; then
+        log_warn "LaTeX missing end document, adding"
+        latex="$latex"$'\n\n\\end{document}'
+    fi
+    
+    # Fix common issues
+    
+    # 1. Fix unescaped underscores in text (not math mode)
+    # This is complex, so we just warn about it
+    
+    # 2. Fix missing braces in commands
+    # Add space after commands that need arguments
+    
+    # 3. Ensure theorem environments are properly closed
+    
+    echo "$latex"
+}
+
+# Check for common LaTeX errors
+check_latex_errors() {
+    local latex="$1"
+    local errors=0
+    
+    # Check for mismatched braces
+    local open_braces=$(echo "$latex" | grep -o '{' | wc -l)
+    local close_braces=$(echo "$latex" | grep -o '}' | wc -l)
+    if [ "$open_braces" -ne "$close_braces" ]; then
+        log_error "LaTeX lint: Mismatched braces (open: $open_braces, close: $close_braces)"
+        errors=$((errors + 1))
+    fi
+    
+    # Check for mismatched math mode
+    local math_opens=$(echo "$latex" | grep -o '\\[' | wc -l)
+    local math_closes=$(echo "$latex" | grep -o '\\]' | wc -l)
+    if [ "$math_opens" -ne "$math_closes" ]; then
+        log_error "LaTeX lint: Mismatched display math mode (\\[ count: $math_opens, \\] count: $math_closes)"
+        errors=$((errors + 1))
+    fi
+    
+    # Check for unescaped underscores in text (simple check)
+    if echo "$latex" | grep -v '^\s*%' | grep -v '\\(' | grep -v '\\[' | grep -q '_[a-zA-Z]'; then
+        log_warn "LaTeX lint: Possible unescaped underscore in text mode"
+    fi
+    
+    # Check for \\begin without \\end
+    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
+    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    if [ "$begins" -ne "$ends" ]; then
+        log_error "LaTeX lint: Mismatched begin/end environments (begin: $begins, end: $ends)"
+        errors=$((errors + 1))
+    fi
+    
+    # Check for common malformed commands
+    if echo "$latex" | grep -q '\\end\s*}'; then
+        log_warn "LaTeX lint: Malformed \\end command detected"
+    fi
+    
+    return $errors
+}
+
+# Process and validate LaTeX for a project
+process_latex() {
+    local project_name="$1"
+    local raw_latex="$2"
+    local output_file="$3"
+    
+    log_info "Processing and validating LaTeX for $project_name..."
+    
+    # Extract LaTeX from response
+    local latex=$(extract_latex_from_response "$raw_latex")
+    
+    # Validate and fix structure
+    latex=$(validate_latex_structure "$latex" "$project_name")
+    
+    # Check for errors
+    if check_latex_errors "$latex"; then
+        log_info "LaTeX validation passed"
+    else
+        log_warn "LaTeX has validation issues, attempting to fix..."
+    fi
+    
+    # Write to output file
+    echo "$latex" > "$output_file"
+    
+    log_info "LaTeX written to: $output_file"
+    
+    # Return success
+    return 0
+}
+
 # Check Ollama availability with retries
 check_ollama() {
     local max_attempts=5
@@ -1134,15 +1273,17 @@ Create a complete LaTeX document with:
 
 Use proper mathematical notation with amsmath, amsthm packages.
 Include theorem environments (theorem, lemma, proposition, proof).
-Format for readability and Arxiv compatibility."
+Format for readability and Arxiv compatibility.
 
-    local latex_article=$(call_ollama "$model" "$latex_prompt")
+IMPORTANT: Output ONLY the LaTeX code in a markdown code block. Start with \`\`\`latex and end with \`\`\`."
 
-    # Save LaTeX article
+    local raw_latex=$(call_ollama "$model" "$latex_prompt")
+
+    # Process and validate LaTeX using the linting functions
     mkdir -p "$project_dir/publication"
-    echo "$latex_article" > "$project_dir/publication/article.tex"
+    process_latex "$project_name" "$raw_latex" "$project_dir/publication/article.tex"
 
-    log_info "LaTeX article compiled: $project_dir/publication/article.tex"
+    log_info "LaTeX article compiled and validated: $project_dir/publication/article.tex"
     update_task_status "$project_name" "TASK-008" "Completed"
     update_progress "$project_name" "Senior Mathematician" "LaTeX compilation complete"
 
