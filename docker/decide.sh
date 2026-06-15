@@ -158,6 +158,8 @@ if grep -qi "next step\|further investigation\|continuation" "$decision_file"; t
     decision_type="next_steps"
 elif grep -qi "computationally\|np-\|infeasible\|complexity" "$decision_file"; then
     decision_type="computation"
+elif grep -qi "publication\|arxiv" "$decision_file"; then
+    decision_type="publication"
 fi
 
 echo -e "${BOLD}Available Options:${NC}"
@@ -171,6 +173,10 @@ elif [ "$decision_type" = "computation" ]; then
     echo -e "  ${CYAN}[1]${NC} A) Skip"
     echo -e "  ${CYAN}[2]${NC} B) Approximate"
     echo -e "  ${CYAN}[3]${NC} C) Theoretical Reference"
+elif [ "$decision_type" = "publication" ]; then
+    echo -e "  ${CYAN}[1]${NC} A) Approve for Publication"
+    echo -e "  ${CYAN}[2]${NC} B) Request Enhancements"
+    echo -e "  ${CYAN}[3]${NC} C) Reject for Now"
 else
     echo -e "  ${CYAN}[1]${NC} A) Approve"
     echo -e "  ${CYAN}[2]${NC} B) Reject"
@@ -185,16 +191,19 @@ case "$choice" in
     1) decision="A"
        [ "$decision_type" = "next_steps" ] && desc="Continue Investigation"
        [ "$decision_type" = "computation" ] && desc="Skip"
+       [ "$decision_type" = "publication" ] && desc="Approve for Publication"
        [ "$decision_type" = "general" ] && desc="Approve"
        ;;
     2) decision="B"
        [ "$decision_type" = "next_steps" ] && desc="Document for Future"
        [ "$decision_type" = "computation" ] && desc="Approximate"
+       [ "$decision_type" = "publication" ] && desc="Request Enhancements"
        [ "$decision_type" = "general" ] && desc="Reject"
        ;;
     3|"") decision="C"
        [ "$decision_type" = "next_steps" ] && desc="End Investigation"
        [ "$decision_type" = "computation" ] && desc="Theoretical Reference"
+       [ "$decision_type" = "publication" ] && desc="Reject for Now"
        [ "$decision_type" = "general" ] && desc="Request More Info"
        ;;
     q|Q) echo "Exiting."; exit 0 ;;
@@ -251,7 +260,7 @@ timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 # Move to appropriate directory based on decision type and option
 # 
 # Routing Rules:
-# - computation/next_steps decisions: ALL options (A/B/C) go to approved/
+# - computation/next_steps/publication decisions: ALL options (A/B/C) go to approved/
 # - general decisions: Option A→approved/, Option B→rejected/, Option C→approved/
 #
 if [ "$decision_type" = "general" ] && [ "$decision" = "B" ]; then

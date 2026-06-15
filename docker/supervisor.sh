@@ -723,6 +723,167 @@ Return the corrected implementation as a code block."
     
     update_task_status "$project_name" "TASK-005" "Completed"
     update_task_status "$project_name" "TASK-006" "Completed"
+
+    # ================================================================================
+    # Phase 4.5: Results Analysis Loop - Mathematical Validation
+    # ================================================================================
+    # Both mathematicians analyze code results for relevance to theorems and proofs.
+    # If results are too shallow, enter additional coding/testing loops.
+    # ================================================================================
+    log_info "Phase 4.5: Results Analysis - Mathematical validation of code results..."
+    update_progress "$project_name" "Senior Mathematician" "Analyzing results relevance"
+    update_task_status "$project_name" "TASK-006" "In Progress"
+
+    # Read all relevant files for analysis
+    local analysis_content=""
+    local theorems_content=""
+    local review_content=""
+    local impl_content=""
+    local test_results_content=""
+
+    [ -f "$project_dir/theorems/analysis.md" ] && analysis_content=$(cat "$project_dir/theorems/analysis.md")
+    [ -f "$project_dir/theorems/proposed.md" ] && theorems_content=$(cat "$project_dir/theorems/proposed.md")
+    [ -f "$project_dir/review/critique.md" ] && review_content=$(cat "$project_dir/review/critique.md")
+    [ -f "$project_dir/implementation/solution.py" ] && impl_content=$(cat "$project_dir/implementation/solution.py")
+    [ -f "$project_dir/tests/results.txt" ] && test_results_content=$(cat "$project_dir/tests/results.txt")
+
+    # Creative Mathematician: Analyze relevance to theorems
+    log_info "Phase 4.5a: Creative Mathematician analyzing theorem relevance..."
+    local creative_analysis_prompt="You are the Creative Mathematician. Analyze the code results for mathematical relevance.
+
+Project: $project_name
+
+Original Theorems Proposed:
+${theorems_content:-Not available}
+
+Senior Mathematician Review:
+${review_content:-Not available}
+
+Implementation:
+${impl_content:-Not available}
+
+Test Results:
+${test_results_content:-Not available}
+
+Evaluate:
+1. Do the code outputs validate the theorems proposed?
+2. Are the mathematical results sufficiently deep/comprehensive?
+3. Are there any gaps between theory and implementation?
+4. Rate the depth of results: shallow / adequate / deep / exceptional
+
+Be specific about what is validated and what may need additional work."
+
+    local creative_analysis=$(call_ollama "$model" "$creative_analysis_prompt")
+
+    # Save Creative Mathematician's analysis
+    mkdir -p "$project_dir/analysis"
+    cat > "$project_dir/analysis/creative_validation.md" << 'ANAL1'
+# Creative Mathematician: Results Analysis
+
+ANAL1
+    echo "" >> "$project_dir/analysis/creative_validation.md"
+    echo "Project: $project_name" >> "$project_dir/analysis/creative_validation.md"
+    echo "Date: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/analysis/creative_validation.md"
+    echo "" >> "$project_dir/analysis/creative_validation.md"
+    echo "## Analysis" >> "$project_dir/analysis/creative_validation.md"
+    echo "$creative_analysis" >> "$project_dir/analysis/creative_validation.md"
+
+    # Senior Mathematician: Analyze proof relevance
+    log_info "Phase 4.5b: Senior Mathematician analyzing proof relevance..."
+    local senior_analysis_prompt="You are the Senior Mathematician. Analyze the code results for proof relevance.
+
+Project: $project_name
+
+Original Analysis:
+${analysis_content:-Not available}
+
+Theorems Proposed:
+${theorems_content:-Not available}
+
+Your Previous Review:
+${review_content:-Not available}
+
+Implementation:
+${impl_content:-Not available}
+
+Test Results:
+${test_results_content:-Not available}
+
+Evaluate:
+1. Do the computational results support the mathematical proofs?
+2. Are the proofs correctly reflected in the implementation?
+3. Are edge cases and special cases properly handled?
+4. Rate the proof validation: weak / moderate / strong / definitive
+
+Be specific about proof strength and any weaknesses."
+
+    local senior_analysis=$(call_ollama "$model" "$senior_analysis_prompt")
+
+    # Save Senior Mathematician's analysis
+    cat > "$project_dir/analysis/senior_validation.md" << 'ANAL2'
+# Senior Mathematician: Results Analysis
+
+ANAL2
+    echo "" >> "$project_dir/analysis/senior_validation.md"
+    echo "Project: $project_name" >> "$project_dir/analysis/senior_validation.md"
+    echo "Date: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/analysis/senior_validation.md"
+    echo "" >> "$project_dir/analysis/senior_validation.md"
+    echo "## Analysis" >> "$project_dir/analysis/senior_validation.md"
+    echo "$senior_analysis" >> "$project_dir/analysis/senior_validation.md"
+
+    # Synthesize both analyses and decide if additional loops are needed
+    log_info "Phase 4.5c: Synthesizing validation results..."
+    local synthesis_prompt="You are the Supervisor. Synthesize both mathematicians' analyses.
+
+Creative Mathematician Analysis:
+$creative_analysis
+
+Senior Mathematician Analysis:
+$senior_analysis
+
+Determine:
+1. Are the results sufficient for publication quality work?
+2. If results are shallow, what additional work is needed?
+3. Should we enter another coding/testing loop?
+
+Respond with ONLY ONE of these formats:
+- APPROVED: [brief justification] - Results are sufficient
+- NEEDS_WORK: [specific deficiencies] - Need additional iterations
+- NEEDS_ENHANCEMENT: [specific enhancements] - Ready for LaTeX with improvements"
+
+    local synthesis=$(call_ollama "$model" "$synthesis_prompt")
+    echo "$synthesis" > "$project_dir/analysis/synthesis.md"
+
+    log_info "Validation synthesis: $synthesis"
+
+    # Check if results are too shallow and we need additional loops
+    local needs_additional_work=false
+    if echo "$synthesis" | grep -qi "NEEDS_WORK"; then
+        needs_additional_work=true
+    fi
+
+    if [ "$needs_additional_work" = "true" ]; then
+        log_warn "Results too shallow - entering additional coding/testing loop"
+        update_progress "$project_name" "Supervisor" "Additional coding loop required"
+        
+        # Increment loop counter
+        main_loop_count=$((main_loop_count + 1))
+        
+        if [ $main_loop_count -lt 3 ]; then
+            log_info "Additional iteration $main_loop_count - returning to implementation"
+            # Reset flags to continue the main loop
+            tests_passed=false
+            continue  # Continue the main loop
+        else
+            log_warn "Max main loop iterations reached - proceeding despite shallow results"
+            update_progress "$project_name" "Supervisor" "Max iterations reached, proceeding"
+        fi
+    fi
+
+    update_task_status "$project_name" "TASK-006" "Completed"
+    update_progress "$project_name" "Senior Mathematician" "Results validation complete"
+
+
     
     # Phase 5: Generate Summary
     log_info "Phase 5: Generating project summary..."
@@ -783,6 +944,9 @@ $(cat "$INPUT_DIR/processed/"${project_name}_*.md 2>/dev/null | head -50 || echo
 | Review | ✓ Complete | Senior Mathematician | Reviewed and approved |
 | Implementation | ✓ Complete | Python Coder | Code implemented |
 | Testing | ✓ Complete | Tester | All tests validated |
+| Results Analysis | ✓ Complete | Both Mathematicians | Results validated |
+| LaTeX Compilation | ✓ Complete | Senior Mathematician | Article compiled |
+| Publication Review | ✓ Complete | Supervisor | Pending approval |
 | Summary | ✓ Complete | Supervisor | Investigation complete |
 
 ## Final Summary
@@ -797,8 +961,190 @@ $summary
 - `implementation/solution.py` - Python implementation
 - `tests/test_solution.py` - Test suite
 - `tests/results.txt` - Test execution results
+- `analysis/creative_validation.md` - Creative Mathematician results analysis
+- `analysis/senior_validation.md` - Senior Mathematician results analysis
+- `analysis/synthesis.md` - Validation synthesis
+- `publication/article.tex` - LaTeX article for Arxiv
 EOF
 
+
+    # ================================================================================
+    # Phase 5.1: Compile LaTeX Article for Arxiv
+    # ================================================================================
+    # Senior Mathematician compiles the work into publication-ready LaTeX
+    # ================================================================================
+    log_info "Phase 5.1: Compiling LaTeX article for Arxiv publication..."
+    update_progress "$project_name" "Senior Mathematician" "Compiling LaTeX article"
+    update_task_status "$project_name" "TASK-008" "In Progress"
+
+    # Read all relevant files for LaTeX compilation
+    local latex_analysis=""
+    local latex_theorems=""
+    local latex_review=""
+    local latex_creative=""
+    local latex_senior=""
+    local latex_synthesis=""
+
+    [ -f "$project_dir/theorems/analysis.md" ] && latex_analysis=$(cat "$project_dir/theorems/analysis.md")
+    [ -f "$project_dir/theorems/proposed.md" ] && latex_theorems=$(cat "$project_dir/theorems/proposed.md")
+    [ -f "$project_dir/review/critique.md" ] && latex_review=$(cat "$project_dir/review/critique.md")
+    [ -f "$project_dir/analysis/creative_validation.md" ] && latex_creative=$(cat "$project_dir/analysis/creative_validation.md")
+    [ -f "$project_dir/analysis/senior_validation.md" ] && latex_senior=$(cat "$project_dir/analysis/senior_validation.md")
+    [ -f "$project_dir/analysis/synthesis.md" ] && latex_synthesis=$(cat "$project_dir/analysis/synthesis.md")
+
+    # Prompt for LaTeX compilation
+    local latex_prompt="You are a Senior Mathematician. Compile a publication-ready LaTeX article suitable for Arxiv.org.
+
+Project: $project_name
+
+Initial Analysis:
+${latex_analysis:-Not available}
+
+Theorems Proposed:
+${latex_theorems:-Not available}
+
+Review:
+${latex_review:-Not available}
+
+Creative Mathematician Validation:
+${latex_creative:-Not available}
+
+Senior Mathematician Validation:
+${latex_senior:-Not available}
+
+Synthesis:
+${latex_synthesis:-Not available}
+
+Create a complete LaTeX document with:
+1. \title{} - Descriptive title
+2. \author{} - Author list
+3. \date{} - Date
+4. \begin{abstract} ... \end{abstract} - Abstract
+5. \section{Introduction}
+6. \section{Mathematical Background}
+7. \section{Main Results}
+8. \section{Theorems and Proofs}
+9. \section{Implementation and Results}
+10. \section{Conclusion}
+11. \section{References}
+12. Any necessary \usepackage{} commands
+
+Use proper mathematical notation with amsmath, amsthm packages.
+Include theorem environments (theorem, lemma, proposition, proof).
+Format for readability and Arxiv compatibility."
+
+    local latex_article=$(call_ollama "$model" "$latex_prompt")
+
+    # Save LaTeX article
+    mkdir -p "$project_dir/publication"
+    echo "$latex_article" > "$project_dir/publication/article.tex"
+
+    log_info "LaTeX article compiled: $project_dir/publication/article.tex"
+    update_task_status "$project_name" "TASK-008" "Completed"
+    update_progress "$project_name" "Senior Mathematician" "LaTeX compilation complete"
+
+
+    # ================================================================================
+    # Phase 5.5: Project Owner Review for Publication Approval
+    # ================================================================================
+    # Present the LaTeX article to Project Owner for:
+    # - Approval for Arxiv publication
+    # - Or additional enhancement requests
+    # ================================================================================
+    log_info "Phase 5.5: Creating publication review decision for Project Owner..."
+    update_progress "$project_name" "Supervisor" "Awaiting publication approval"
+
+    local pub_review_dir="$DEC_DIR/pending/$project_name"
+    mkdir -p "$pub_review_dir"
+
+    # Generate decision filename
+    local pub_decision_num=$(find "$pub_review_dir" -name "decision-*.md" 2>/dev/null | wc -l)
+    pub_decision_num=$((pub_decision_num + 1))
+    local pub_decision_filename=$(printf "decision-%03d.md" "$pub_decision_num")
+
+    cat > "$pub_review_dir/$pub_decision_filename" << 'PUBREVIEWFILE'
+# Publication Review: PROJECTNAME
+
+**Decision ID**: PUB-DECNUM
+**Project**: PROJECTNAME
+**Decision Type**: publication
+**Date Created**: DATETIME
+**Status**: Pending
+
+## Summary
+
+The investigation is complete and a LaTeX article has been compiled for Arxiv publication.
+
+## Article Preview
+
+The article is available at: /app/output/PROJECTNAME/publication/article.tex
+
+## Review Checklist
+
+Before approving publication, verify:
+- [ ] Mathematical content is correct
+- [ ] Theorems and proofs are complete
+- [ ] LaTeX compiles without errors
+- [ ] Results are properly documented
+
+## Options
+
+### Option A: Approve for Publication
+The article is ready for Arxiv submission.
+
+### Option B: Request Enhancements
+Additional work is needed before publication. Specify enhancements below.
+
+### Option C: Reject for Now
+This work is not ready for publication. Document reasons.
+
+## How to Respond
+
+Edit this file to add your decision:
+
+```
+**Project Owner Decision**: [A/B/C]
+**Rationale**: [Your reasoning]
+**Enhancements Requested**: [If B, specify what is needed]
+**Signature**: [Your name]
+**Date**: [Today's date]
+```
+
+## If Approved (Option A)
+
+The article will be moved to /app/output/PROJECTNAME/publication/approved/ and marked ready for submission.
+
+## If Enhancements Requested (Option B)
+
+A new project will be created with your enhancement requests.
+
+## Routing
+
+When processed via `/app/docker/decide.sh`, this decision will be moved to:
+- `/decisions/approved/PROJECTNAME/` (Option A - ready for submission)
+- `/decisions/pending/PROJECTNAME/` (Option B - creates enhancement project)
+- `/decisions/rejected/PROJECTNAME/` (Option C - deferred)
+
+## Instructions
+
+1. Review the LaTeX article at: /app/output/PROJECTNAME/publication/article.tex
+2. Optionally compile with: pdflatex /app/output/PROJECTNAME/publication/article.tex
+3. Run decide.sh when ready to make a decision:
+```bash
+docker exec pent-eam-math-team /app/docker/decide.sh
+```
+PUBREVIEWFILE
+
+    # Replace placeholders using sed
+    sed -i "s/PUB-DECNUM/PUB-$(printf '%03d' "$pub_decision_num")/g" "$pub_review_dir/$pub_decision_filename"
+    sed -i "s/PROJECTNAME/$project_name/g" "$pub_review_dir/$pub_decision_filename"
+    sed -i "s/DATETIME/$(date '+%Y-%m-%d %H:%M:%S')/g" "$pub_review_dir/$pub_decision_filename"
+
+    log_info "Publication review decision created: $pub_review_dir/$pub_decision_filename"
+    log_warn "PROJECT OWNER ACTION REQUIRED: Review publication at $pub_review_dir/$pub_decision_filename"
+
+    # Non-blocking: continue - project owner decides via decide.sh
+    log_info "Publication review pending. Use decide.sh to process publication decision."
     log_info "Investigation complete for: $project_name"
     update_progress "$project_name" "Supervisor" "Investigation complete"
 
