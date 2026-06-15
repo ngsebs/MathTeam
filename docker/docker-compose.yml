@@ -56,6 +56,27 @@ services:
     ports:
       # OpenHands API
       - "3000:3000"
+    depends_on:
+      - decision-poller
+
+  decision-poller:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: pent-eam-decision-poller
+    networks:
+      - default
+    env_file:
+      - ../.env.example
+    volumes:
+      - ../input:/app/input:rw
+      - ../output:/app/output:rw
+      - ../communication:/app/communication:rw
+      - ../decisions:/app/decisions:rw
+    environment:
+      - POLL_INTERVAL=${POLL_INTERVAL:-5}
+    command: ["/app/docker/poll-decisions.sh", "start"]
+    restart: unless-stopped
 
 networks:
   default:
