@@ -48,6 +48,10 @@ log_error() {
     log "${RED}[ERROR]${NC} $1"
 }
 
+log_success() {
+    log "${GREEN}[SUCCESS]${NC} $1"
+}
+
 # Call Ollama API for LLM inference
 # Safe write function - handles special characters in content
 safe_write() {
@@ -122,6 +126,321 @@ call_ollama() {
     
     debug_log "call_ollama: success, response_preview=${extracted:0:100}..."
     echo "$extracted"
+}
+
+# ================================================================================
+# LaTeX Linting, Validation, and Fix Functions
+# ================================================================================
+
+# Extract LaTeX content from markdown code blocks
+extract_latex_from_response() {
+    local response="$1"
+    
+    # Try to extract from ```latex or ```tex code blocks
+    if echo "$response" | grep -q '\`\`\`latex'; then
+        echo "$response" | sed -n '/\`\`\`latex/,/\`\`\`/p' | sed '1d;$d'
+    elif echo "$response" | grep -q '\`\`\`tex'; then
+        echo "$response" | sed -n '/\`\`\`tex/,/\`\`\`/p' | sed '1d;$d'
+    elif echo "$response" | grep -q '\`\`\`'; then
+        echo "$response" | sed -n '/\`\`\`/,/\`\`\`/p' | sed '1d;$d'
+    else
+        # Return as-is if no code block found
+        echo "$response"
+    fi
+}
+
+# Fix unescaped underscores in text mode (outside math)
+fix_underscores() {
+    local latex="$1"
+    
+    # This is tricky - we need to be careful not to break math mode
+    # Strategy: escape underscores that are NOT inside \(...\) or \[...\] or $...$
+    
+    # Simple approach: escape underscores followed by letters (common case)
+    # This won't catch all cases but handles most
+    latex=$(echo "$latex" | sed 's/_[a-zA-Z]/\\_&/g')
+    latex=$(echo "$latex" | sed 's/\\_/_/g')  # Fix double escaping
+    
+    echo "$latex"
+}
+
+# Fix mismatched braces by adding missing closing braces
+fix_braces() {
+    local latex="$1"
+    local open_braces=$(echo "$latex" | grep -o '{' | wc -l)
+    local close_braces=$(echo "$latex" | grep -o '}' | wc -l)
+    local diff=$((open_braces - close_braces))
+    
+    if [ "$diff" -gt 0 ]; then
+        log_warn "Adding $diff missing closing braces"
+        # Add closing braces at the end
+        for i in $(seq 1 $diff); do
+            latex="$latex }"
+        done
+    elif [ "$diff" -lt 0 ]; then
+        log_warn "Removing $((-diff)) extra closing braces"
+        # Remove extra closing braces from end
+        for i in $(seq 1 $((-diff))); do
+            latex=$(echo "$latex" | sed 's/}$//')
+        done
+    fi
+    
+    echo "$latex"
+}
+
+# Fix mismatched display math delimiters
+fix_math_delimiters() {
+    local latex="$1"
+    local math_opens=$(echo "$latex" | grep -o '\\[' | wc -l)
+    local math_closes=$(echo "$latex" | grep -o '\\]' | wc -l)
+    
+    if [ "$math_opens" -gt "$math_closes" ]; then
+        local diff=$((math_opens - math_closes))
+        log_warn "Adding $diff missing \\] delimiters"
+        for i in $(seq 1 $diff); do
+            latex="$latex"$'\n\]'
+        done
+    elif [ "$math_closes" -gt "$math_opens" ]; then
+        local diff=$((math_closes - math_opens))
+        log_warn "Removing $diff extra \\] delimiters"
+        for i in $(seq 1 $diff); do
+            latex=$(echo "$latex" | sed 's/\\]$//')
+        done
+    fi
+    
+    echo "$latex"
+}
+
+# Fix mismatched environment pairs
+fix_environments() {
+    local latex="$1"
+    
+    # Count environments
+    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
+    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    local diff=$((begins - ends))
+    
+    if [ "$diff" -gt 0 ]; then
+        log_warn "Adding $diff missing \\end{} commands"
+        for i in $(seq 1 $diff); do
+            latex="$latex"$'\n\\end{document}'
+        done
+    fi
+    
+    echo "$latex"
+}
+
+# Validate and fix basic LaTeX structure
+validate_latex_structure() {
+    local latex="$1"
+    local project_name="$2"
+    
+    # Check for documentclass or document environment
+    if ! echo "$latex" | grep -q '\\documentclass'; then
+        # Prepend document class if missing
+        log_warn "LaTeX missing documentclass, adding arxiv template"
+        latex='\documentclass[twocolumn]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+'"$latex"
+    fi
+    
+    # Check for document environment
+    if ! echo "$latex" | grep -q '\\begin{document}'; then
+        log_warn "LaTeX missing document environment, adding"
+        # Insert after usepackage declarations
+        latex=$(echo "$latex" | sed '/\\usepackage.*/a\
+\
+\\begin{document}' )
+    fi
+    
+    # Check for end document
+    if ! echo "$latex" | grep -q '\\end{document}'; then
+        log_warn "LaTeX missing end document, adding"
+        latex="$latex"$'\n\n\\end{document}'
+    fi
+    
+    echo "$latex"
+}
+
+# Check for common LaTeX errors and return error count
+check_latex_errors() {
+    local latex="$1"
+    local errors=0
+    
+    # Check for mismatched braces
+    local open_braces=$(echo "$latex" | grep -o '{' | wc -l)
+    local close_braces=$(echo "$latex" | grep -o '}' | wc -l)
+    if [ "$open_braces" -ne "$close_braces" ]; then
+        log_error "LaTeX lint: Mismatched braces (open: $open_braces, close: $close_braces)"
+        errors=$((errors + 1))
+    fi
+    
+    # Check for mismatched math mode
+    local math_opens=$(echo "$latex" | grep -o '\\[' | wc -l)
+    local math_closes=$(echo "$latex" | grep -o '\\]' | wc -l)
+    if [ "$math_opens" -ne "$math_closes" ]; then
+        log_error "LaTeX lint: Mismatched display math mode (\\[ count: $math_opens, \\] count: $math_closes)"
+        errors=$((errors + 1))
+    fi
+    
+    # Check for unescaped underscores in text (simple check)
+    if echo "$latex" | grep -v '^\s*%' | grep -v '\\(' | grep -v '\\[' | grep -q '_[a-zA-Z]'; then
+        log_warn "LaTeX lint: Possible unescaped underscore in text mode"
+    fi
+    
+    # Check for \\begin without \\end
+    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
+    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    if [ "$begins" -ne "$ends" ]; then
+        log_error "LaTeX lint: Mismatched begin/end environments (begin: $begins, end: $ends)"
+        errors=$((errors + 1))
+    fi
+    
+    # Check for common malformed commands
+    if echo "$latex" | grep -q '\\end\s*}'; then
+        log_warn "LaTeX lint: Malformed \\end command detected"
+    fi
+    
+    # Check for missing abstract
+    if ! echo "$latex" | grep -q '\\begin{abstract}'; then
+        log_warn "LaTeX lint: Missing abstract environment"
+    fi
+    
+    return $errors
+}
+
+# Full LaTeX validation and auto-fix pipeline
+fix_latex() {
+    local latex="$1"
+    local project_name="$2"
+    local fixes_applied=0
+    
+    log_info "Applying automatic fixes to LaTeX..."
+    
+    # 1. Fix unescaped underscores
+    local before=$(echo "$latex" | grep -o '_[a-zA-Z]' | wc -l)
+    latex=$(fix_underscores "$latex")
+    local after=$(echo "$latex" | grep -o '_[a-zA-Z]' | grep -v '^\\_' | wc -l)
+    if [ "$before" -gt "$after" ]; then
+        log_info "Fixed $((before - after)) unescaped underscores"
+        fixes_applied=$((fixes_applied + before - after))
+    fi
+    
+    # 2. Fix mismatched braces
+    local open=$(echo "$latex" | grep -o '{' | wc -l)
+    local close=$(echo "$latex" | grep -o '}' | wc -l)
+    if [ "$open" -ne "$close" ]; then
+        latex=$(fix_braces "$latex")
+        fixes_applied=$((fixes_applied + 1))
+    fi
+    
+    # 3. Fix math delimiters
+    local math_open=$(echo "$latex" | grep -o '\\[' | wc -l)
+    local math_close=$(echo "$latex" | grep -o '\\]' | wc -l)
+    if [ "$math_open" -ne "$math_close" ]; then
+        latex=$(fix_math_delimiters "$latex")
+        fixes_applied=$((fixes_applied + 1))
+    fi
+    
+    # 4. Fix environment pairs
+    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
+    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    if [ "$begins" -ne "$ends" ]; then
+        latex=$(fix_environments "$latex")
+        fixes_applied=$((fixes_applied + 1))
+    fi
+    
+    # 5. Ensure valid structure
+    latex=$(validate_latex_structure "$latex" "$project_name")
+    
+    echo "$latex"
+    return $fixes_applied
+}
+
+# Process and validate LaTeX for a project with retry loop
+process_latex() {
+    local project_name="$1"
+    local raw_latex="$2"
+    local output_file="$3"
+    local theorems_content="$4"
+    local review_content="$5"
+    
+    local max_retries=3
+    local retry_count=0
+    local latex=""
+    local errors=0
+    
+    log_info "Starting LaTeX processing and validation for $project_name..."
+    
+    while [ $retry_count -lt $max_retries ]; do
+        retry_count=$((retry_count + 1))
+        log_info "LaTeX validation attempt $retry_count of $max_retries"
+        
+        # Extract LaTeX from response (only on first attempt)
+        if [ -z "$latex" ]; then
+            latex=$(extract_latex_from_response "$raw_latex")
+        fi
+        
+        # Validate and fix structure
+        latex=$(validate_latex_structure "$latex" "$project_name")
+        
+        # Apply automatic fixes
+        latex=$(fix_latex "$latex" "$project_name")
+        
+        # Check for errors
+        errors=0
+        check_latex_errors "$latex" || errors=$?
+        
+        if [ $errors -eq 0 ]; then
+            log_success "LaTeX validation passed on attempt $retry_count"
+            break
+        else
+            log_warn "LaTeX has $errors error(s), attempting regeneration..."
+            
+            if [ $retry_count -lt $max_retries ]; then
+                # Try to regenerate LaTeX with fixes
+                log_info "Requesting regenerated LaTeX with corrections..."
+                
+                local fix_prompt="You are a Senior Mathematician. Fix the following LaTeX code which has errors.
+
+Previous LaTeX (with errors):
+$latex
+
+Common errors to fix:
+1. Unescaped underscores in text (use \\_ instead of _)
+2. Mismatched braces { }
+3. Mismatched display math delimiters \\[ and \\]
+4. Mismatched begin/end environments
+5. Missing documentclass or document environment
+
+Please generate corrected LaTeX code. Output ONLY the LaTeX code in a markdown code block starting with \`\`\`latex"
+
+                latex=$(call_ollama "$model" "$fix_prompt")
+            fi
+        fi
+    done
+    
+    # Final validation
+    errors=0
+    check_latex_errors "$latex" || errors=$?
+    
+    if [ $errors -gt 0 ]; then
+        log_error "LaTeX still has $errors error(s) after $max_retries attempts"
+        log_warn "Writing LaTeX anyway - manual review recommended"
+    fi
+    
+    # Write to output file
+    echo "$latex" > "$output_file"
+    
+    log_info "LaTeX written to: $output_file"
+    
+    # Return error count
+    return $errors
 }
 
 # Check Ollama availability with retries
@@ -585,18 +904,56 @@ EOFDECISION
         update_progress "$project_name" "Supervisor" "Awaiting project owner decision - see $decision_filename"
         update_task_status "$project_name" "TASK-005" "In Progress"
         
-        # Non-blocking: continue processing - project owner can decide asynchronously
-        log_info "Continuing with next phases. Use decide.sh to process decision when ready."
+        # CLOSED LOOP: Wait for decision before proceeding
+        log_info "CHECKPOINT: Pausing pipeline until computation decision is resolved..."
+        
+        if wait_for_decision "$project_name" "computation" 7200; then
+            # Decision resolved - get the choice
+            local computation_decision=$(get_resolved_decision "$project_name" "computation")
+            local implementation_mode=$(handle_computation_decision "$project_name" "$computation_decision")
+            
+            # Store implementation mode for later use
+            echo "$implementation_mode" > "$project_dir/.implementation_mode"
+            
+            log_info "Computation decision received: $computation_decision -> $implementation_mode"
+            update_progress "$project_name" "Supervisor" "Decision resolved: $implementation_mode"
+        else
+            log_warn "Computation decision timeout - proceeding with standard implementation"
+            echo "STANDARD" > "$project_dir/.implementation_mode"
+        fi
         
     else
         log_info "No decision escalation needed - all theorems are computationally feasible"
         update_task_status "$project_name" "TASK-005" "Completed"
+        echo "STANDARD" > "$project_dir/.implementation_mode"
     fi
     
-    # Phase 3: Python Coder - Implement
-    log_info "Phase 3: Python Coder implementing..."
-    update_task_status "$project_name" "TASK-004" "In Progress"
-    update_progress "$project_name" "Python Coder" "Implementing mathematical concepts"
+    # Check implementation mode and skip/adapt if needed
+    local impl_mode=$(cat "$project_dir/.implementation_mode" 2>/dev/null || echo "STANDARD")
+    
+    if [ "$impl_mode" = "SKIP" ] || [ "$impl_mode" = "REFERENCE" ]; then
+        log_info "Phase 3: SKIPPING implementation (computation decision: $impl_mode)"
+        update_progress "$project_name" "Supervisor" "Implementation skipped per decision"
+        update_task_status "$project_name" "TASK-004" "Completed (skipped per decision)"
+        
+        # Create placeholder for theoretical reference
+        cat > "$project_dir/implementation/solution.py" << 'PYTHON_EOF'
+"""
+Theoretical Reference: PROJECT_PLACEHOLDER
+
+This implementation was skipped based on Project Owner decision.
+The theorems in this project are documented as theoretical references only.
+See: /app/output/PROJECT_PLACEHOLDER/review/critique.md
+"""
+# No computational implementation provided per Project Owner decision
+PYTHON_EOF
+        sed -i "s/PROJECT_PLACEHOLDER/$project_name/g" "$project_dir/implementation/solution.py"
+        
+    else
+        # Phase 3: Python Coder - Implement
+        log_info "Phase 3: Python Coder implementing (mode: $impl_mode)..."
+        update_task_status "$project_name" "TASK-004" "In Progress"
+        update_progress "$project_name" "Python Coder" "Implementing mathematical concepts"
     
     # Read theorems and review files with fallback
     local theorems_for_code=""
@@ -633,13 +990,35 @@ Use sympy for symbolic math, numpy for numerical computation."
     write_response "$project_dir/implementation/solution.py" "$implementation"
     
     update_task_status "$project_name" "TASK-004" "Completed"
+    fi  # End of impl_mode check
     
-    # Phase 4: Tester - Validate with Fix Loop
-    log_info "Phase 4: Tester validating implementation..."
-    update_task_status "$project_name" "TASK-005" "In Progress"
-    update_progress "$project_name" "Tester" "Creating test suite"
-    
-    local max_test_iterations=3
+    # Check if we should skip testing (implementation was skipped)
+    if [ "$impl_mode" = "SKIP" ] || [ "$impl_mode" = "REFERENCE" ]; then
+        log_info "Phase 4: SKIPPING tests (implementation was skipped)"
+        update_progress "$project_name" "Supervisor" "Tests skipped per decision"
+        update_task_status "$project_name" "TASK-005" "Completed (skipped)"
+        update_task_status "$project_name" "TASK-006" "Completed (skipped)"
+        
+        # Create placeholder test file
+        cat > "$project_dir/tests/test_solution.py" << 'TEST_EOF'
+"""
+Tests were skipped based on Project Owner decision.
+The implementation was marked as theoretical reference only.
+"""
+import pytest
+
+def test_placeholder():
+    """Placeholder test when implementation is skipped."""
+    pytest.skip("Implementation skipped per Project Owner decision")
+TEST_EOF
+        
+    else
+        # Phase 4: Tester - Validate with Fix Loop
+        log_info "Phase 4: Tester validating implementation..."
+        update_task_status "$project_name" "TASK-005" "In Progress"
+        update_progress "$project_name" "Tester" "Creating test suite"
+        
+        local max_test_iterations=3
     local test_iteration=0
     local tests_passed=false
     
@@ -765,6 +1144,7 @@ Return the corrected implementation as a code block."
     
     update_task_status "$project_name" "TASK-005" "Completed"
     update_task_status "$project_name" "TASK-006" "Completed"
+    fi  # End of Phase 4 conditional (skip tests if implementation was skipped)
 
     # ================================================================================
     # Phase 4.5: Results Analysis Loop - Mathematical Validation
@@ -1073,17 +1453,26 @@ Create a complete LaTeX document with:
 
 Use proper mathematical notation with amsmath, amsthm packages.
 Include theorem environments (theorem, lemma, proposition, proof).
-Format for readability and Arxiv compatibility."
+Format for readability and Arxiv compatibility.
 
-    local latex_article=$(call_ollama "$model" "$latex_prompt")
+IMPORTANT: Output ONLY the LaTeX code in a markdown code block. Start with \`\`\`latex and end with \`\`\`."
 
-    # Save LaTeX article
+    local raw_latex=$(call_ollama "$model" "$latex_prompt")
+
+    # Process and validate LaTeX using the linting functions with retry loop
     mkdir -p "$project_dir/publication"
-    echo "$latex_article" > "$project_dir/publication/article.tex"
-
-    log_info "LaTeX article compiled: $project_dir/publication/article.tex"
+    local latex_errors=0
+    process_latex "$project_name" "$raw_latex" "$project_dir/publication/article.tex" "$latex_theorems" "$latex_review" || latex_errors=$?
+    
+    if [ $latex_errors -gt 0 ]; then
+        log_warn "LaTeX has $latex_errors error(s) - manual review recommended"
+        update_progress "$project_name" "Senior Mathematician" "LaTeX compiled with $latex_errors error(s)"
+    else
+        log_info "LaTeX article compiled and validated: $project_dir/publication/article.tex"
+        update_progress "$project_name" "Senior Mathematician" "LaTeX compilation complete"
+    fi
+    
     update_task_status "$project_name" "TASK-008" "Completed"
-    update_progress "$project_name" "Senior Mathematician" "LaTeX compilation complete"
 
 
     # ================================================================================
@@ -1185,13 +1574,27 @@ PUBREVIEWFILE
     log_info "Publication review decision created: $pub_review_dir/$pub_decision_filename"
     log_warn "PROJECT OWNER ACTION REQUIRED: Review publication at $pub_review_dir/$pub_decision_filename"
 
-    # Non-blocking: continue - project owner decides via decide.sh
-    log_info "Publication review pending. Use decide.sh to process publication decision."
+    # CLOSED LOOP: Wait for publication decision before finalizing
+    log_info "CHECKPOINT: Pausing pipeline until publication decision is resolved..."
+    
+    if wait_for_decision "$project_name" "publication" 7200; then
+        local pub_decision=$(get_resolved_decision "$project_name" "publication")
+        log_info "Publication decision received: $pub_decision"
+        update_progress "$project_name" "Supervisor" "Publication decision: $pub_decision"
+        
+        # Create marker file with publication decision
+        echo "Publication Decision: $pub_decision" > "$project_dir/.publication_decision"
+        echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/.publication_decision"
+    else
+        log_warn "Publication decision timeout - marking as pending review"
+        echo "Publication Decision: TIMEOUT" > "$project_dir/.publication_decision"
+    fi
+    
     log_info "Investigation complete for: $project_name"
     update_progress "$project_name" "Supervisor" "Investigation complete"
 
-    # Phase 5.5: Handle next steps escalation (non-blocking)
-    # Create decision file and continue - process action asynchronously
+    # Phase 5.5: Handle next steps escalation (CLOSED LOOP)
+    # Create decision file and WAIT for resolution
     if echo "$summary" | grep -qiE "next step|further investigation|future work|recommended|proposed follow"; then
         log_info "Phase 5.5: Summary contains next steps - creating escalation for Project Owner..."
         
@@ -1264,8 +1667,38 @@ NEXTStepSFILE
         log_info "Next steps decision created: $next_steps_dir/$next_steps_filename"
         log_warn "PROJECT OWNER ACTION REQUIRED: Review next steps at $next_steps_dir/$next_steps_filename"
         
-        # Non-blocking: continue - project owner decides via decide.sh
-        log_info "Investigation complete. Use decide.sh to process next steps decision when ready."
+        # CLOSED LOOP: Wait for next steps decision
+        log_info "CHECKPOINT: Pausing pipeline until next steps decision is resolved..."
+        
+        if wait_for_decision "$project_name" "next_steps" 7200; then
+            local next_decision=$(get_resolved_decision "$project_name" "next_steps")
+            log_info "Next steps decision received: $next_decision"
+            update_progress "$project_name" "Supervisor" "Next steps decision: $next_decision"
+            
+            # Create marker file with next steps decision
+            echo "Next Steps Decision: $next_decision" > "$project_dir/.next_steps_decision"
+            echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')" >> "$project_dir/.next_steps_decision"
+            
+            # CLOSED LOOP ACTION: Handle decision immediately
+            case "$next_decision" in
+                A*|Continue*|Continue\ Investigation)
+                    log_info "CLOSED LOOP: Creating continuation project..."
+                    # Call the continuation creation logic directly
+                    handle_continue_investigation_local "$project_name"
+                    ;;
+                B*|Document*|Document\ for\ Future)
+                    log_info "CLOSED LOOP: Documenting next steps for future work..."
+                    handle_next_steps_document "$project_name"
+                    ;;
+                C*|End*|End\ Investigation)
+                    log_info "CLOSED LOOP: Ending investigation..."
+                    handle_next_steps_end "$project_name"
+                    ;;
+            esac
+        else
+            log_warn "Next steps decision timeout - investigation complete"
+            echo "Next Steps Decision: TIMEOUT" > "$project_dir/.next_steps_decision"
+        fi
     else
         log_info "Investigation complete for: $project_name"
     fi
@@ -1281,6 +1714,264 @@ update_task_status() {
     if [ -f "$delegations_file" ]; then
         sed -i "s/| $task_id |.*| $status |/| $task_id | $(date '+%Y-%m-%d %H:%M:%S') | $status |/" "$delegations_file" 2>/dev/null || true
     fi
+}
+
+# ================================================================================
+# Decision Checkpoint Functions - CLOSED LOOP IMPLEMENTATION
+# ================================================================================
+
+# Wait for a specific decision type to be resolved
+# This creates a blocking checkpoint that pauses the pipeline until decision is made
+wait_for_decision() {
+    local project_name="$1"
+    local decision_type="$2"  # computation, publication, next_steps
+    local timeout_seconds="${3:-3600}"  # Default 1 hour timeout
+    local start_time=$(date +%s)
+    local poll_interval=5
+    
+    log_info "CHECKPOINT: Waiting for $decision_type decision..."
+    update_progress "$project_name" "Supervisor" "CHECKPOINT: Awaiting $decision_type decision"
+    
+    while true; do
+        # Check if decision has been resolved (moved to approved/ or rejected/)
+        local approved_file="$DEC_DIR/approved/$project_name"/decision-*.md
+        local rejected_file="$DEC_DIR/rejected/$project_name"/decision-*.md
+        
+        # Check approved directory
+        if [ -d "$DEC_DIR/approved/$project_name" ]; then
+            for file in "$DEC_DIR/approved/$project_name"/*.md; do
+                if [ -f "$file" ]; then
+                    local file_type=$(grep -i "^\\*\\*Decision Type\\*\\*:" "$file" 2>/dev/null | sed 's/.*: *//' | tr -d ' ')
+                    if [ "$file_type" = "$decision_type" ]; then
+                        log_info "CHECKPOINT: $decision_type decision resolved (approved/)"
+                        return 0
+                    fi
+                fi
+            done
+        fi
+        
+        # Check rejected directory
+        if [ -d "$DEC_DIR/rejected/$project_name" ]; then
+            for file in "$DEC_DIR/rejected/$project_name"/*.md; do
+                if [ -f "$file" ]; then
+                    local file_type=$(grep -i "^\\*\\*Decision Type\\*\\*:" "$file" 2>/dev/null | sed 's/.*: *//' | tr -d ' ')
+                    if [ "$file_type" = "$decision_type" ]; then
+                        log_info "CHECKPOINT: $decision_type decision resolved (rejected/)"
+                        return 0
+                    fi
+                fi
+            done
+        fi
+        
+        # Check for timeout
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        
+        if [ $elapsed -ge $timeout_seconds ]; then
+            log_warn "CHECKPOINT: Timeout reached for $decision_type decision"
+            return 1
+        fi
+        
+        # Log waiting status every 30 seconds
+        if [ $((elapsed % 30)) -eq 0 ] && [ $elapsed -gt 0 ]; then
+            log_info "CHECKPOINT: Still waiting for $decision_type decision... (${elapsed}s elapsed)"
+        fi
+        
+        sleep $poll_interval
+    done
+}
+
+# Get the resolved decision from approved/ or rejected/ directory
+get_resolved_decision() {
+    local project_name="$1"
+    local decision_type="$2"
+    
+    # Check approved directory first
+    if [ -d "$DEC_DIR/approved/$project_name" ]; then
+        for file in "$DEC_DIR/approved/$project_name"/*.md; do
+            if [ -f "$file" ]; then
+                local file_type=$(grep -i "^\\*\\*Decision Type\\*\\*:" "$file" 2>/dev/null | sed 's/.*: *//' | tr -d ' ')
+                if [ "$file_type" = "$decision_type" ]; then
+                    grep -i "^\\*\\*Project Owner Decision\\*\\*:" "$file" 2>/dev/null | sed 's/.*: *//' | tr -d ' '
+                    return 0
+                fi
+            fi
+        done
+    fi
+    
+    # Check rejected directory
+    if [ -d "$DEC_DIR/rejected/$project_name" ]; then
+        for file in "$DEC_DIR/rejected/$project_name"/*.md; do
+            if [ -f "$file" ]; then
+                local file_type=$(grep -i "^\\*\\*Decision Type\\*\\*:" "$file" 2>/dev/null | sed 's/.*: *//' | tr -d ' ')
+                if [ "$file_type" = "$decision_type" ]; then
+                    grep -i "^\\*\\*Project Owner Decision\\*\\*:" "$file" 2>/dev/null | sed 's/.*: *//' | tr -d ' '
+                    return 0
+                fi
+            fi
+        done
+    fi
+    
+    echo "UNKNOWN"
+    return 1
+}
+
+# Handle computation decision - determine implementation approach
+handle_computation_decision() {
+    local project_name="$1"
+    local decision="$2"
+    
+    case "$decision" in
+        A*|Skip*)
+            log_info "COMPUTATION: Implementing skipped - theorems as theoretical reference only"
+            echo "SKIP"
+            ;;
+        B*|Approximate*)
+            log_info "COMPUTATION: Implementing approximate version"
+            echo "APPROXIMATE"
+            ;;
+        C*|Reference*|Theoretical\ Reference*)
+            log_info "COMPUTATION: Implementing as theoretical reference"
+            echo "REFERENCE"
+            ;;
+        *)
+            log_warn "COMPUTATION: Unknown decision, proceeding with standard implementation"
+            echo "STANDARD"
+            ;;
+    esac
+}
+
+# Check if there are any pending decisions for a project
+has_pending_decisions() {
+    local project_name="$1"
+    
+    if [ -d "$DEC_DIR/pending/$project_name" ]; then
+        local pending_count=$(find "$DEC_DIR/pending/$project_name" -name "*.md" 2>/dev/null | wc -l)
+        [ $pending_count -gt 0 ]
+        return $?
+    fi
+    return 1
+}
+
+# ================================================================================
+# Local Decision Action Handlers - CLOSED LOOP IMPLEMENTATION
+# These functions handle decisions directly in supervisor instead of relying on poller
+# ================================================================================
+
+# Handle continue investigation - creates continuation project
+handle_continue_investigation_local() {
+    local project_name="$1"
+    local original_project_dir="$OUTPUT_DIR/$project_name"
+    local continuation_name="${project_name}-continuation"
+    local continuation_dir="$OUTPUT_DIR/$continuation_name"
+    local continuation_input="$INPUT_DIR/${continuation_name}.md"
+    
+    log_info "Creating continuation project: $continuation_name"
+    
+    # Extract next steps from original summary
+    local next_steps_summary=""
+    if [ -f "$original_project_dir/summary.md" ]; then
+        next_steps_summary=$(grep -A 50 "## Next Steps" "$original_project_dir/summary.md" 2>/dev/null || echo "")
+    fi
+    
+    # Create continuation project description
+    cat > "$continuation_input" << EOF
+# Continuation Project: $continuation_name
+
+**Project Title**: Continuation of $project_name
+
+**Problem Statement**: 
+Continue the investigation from $project_name based on Project Owner approval.
+
+**Background/Context**:
+This is an automated continuation project created from the decision loop.
+
+## Previous Investigation
+Previous project: $project_name
+Summary next steps:
+$next_steps_summary
+
+**Priority**: High
+
+**Notes**: 
+This continuation was automatically created by the closed-loop decision system.
+EOF
+    
+    log_info "Continuation project created: $continuation_input"
+    log_info "Supervisor will pick up this project on next scan"
+}
+
+# Handle document for future - saves next steps to file
+handle_next_steps_document() {
+    local project_name="$1"
+    local project_dir="$OUTPUT_DIR/$project_name"
+    local next_steps_file="$project_dir/next-steps.md"
+    
+    log_info "Documenting next steps for future work: $project_name"
+    
+    # Extract summary content
+    local summary_content=""
+    [ -f "$project_dir/summary.md" ] && summary_content=$(cat "$project_dir/summary.md")
+    
+    # Create next-steps.md with full documentation
+    cat > "$next_steps_file" << EOF
+# Next Steps: $project_name
+
+**Status**: Documented for Future Work
+**Date**: $(date '+%Y-%m-%d %H:%M:%S')
+
+## Recommended Future Work
+
+The following next steps were identified during the investigation:
+
+$summary_content
+
+## Additional Notes
+
+This document was automatically created by the closed-loop decision system
+when the Project Owner chose to document findings for future work.
+
+EOF
+    
+    log_info "Next steps documented: $next_steps_file"
+}
+
+# Handle end investigation - marks project as complete
+handle_next_steps_end() {
+    local project_name="$1"
+    local project_dir="$OUTPUT_DIR/$project_name"
+    local status_file="$project_dir/status.md"
+    
+    log_info "Ending investigation: $project_name"
+    
+    # Update project status
+    cat > "$status_file" << EOF
+# Project Status: $project_name
+
+**Status**: Completed
+**Completed Date**: $(date '+%Y-%m-%d %H:%M:%S')
+**Decision**: Investigation ended by Project Owner
+
+## Investigation Summary
+
+The investigation for $project_name has been completed. The Project Owner
+has chosen to end the investigation at this point.
+
+All project files remain available in: $project_dir
+
+## Closed-Loop Decision
+
+This status was automatically set by the closed-loop decision system
+when the Project Owner chose to end the investigation.
+
+EOF
+    
+    # Update the summary to mark as complete
+    if [ -f "$project_dir/summary.md" ]; then
+        sed -i 's/\*\*Status\*\*: In Progress/**Status**: Completed/' "$project_dir/summary.md"
+    fi
+    
+    log_info "Project marked as completed: $status_file"
 }
 
 # Update progress in progress.md
