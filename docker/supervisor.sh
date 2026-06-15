@@ -191,8 +191,8 @@ fix_braces() {
 # Fix mismatched display math delimiters
 fix_math_delimiters() {
     local latex="$1"
-    local math_opens=$(echo "$latex" | grep -o '\\[' | wc -l)
-    local math_closes=$(echo "$latex" | grep -o '\\]' | wc -l)
+    local math_opens=$(echo "$latex" | grep -c '\\[' 2>/dev/null || echo 0)
+    local math_closes=$(echo "$latex" | grep -c '\\]' 2>/dev/null || echo 0)
     
     if [ "$math_opens" -gt "$math_closes" ]; then
         local diff=$((math_opens - math_closes))
@@ -215,9 +215,9 @@ fix_math_delimiters() {
 fix_environments() {
     local latex="$1"
     
-    # Count environments
-    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
-    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    # Count environments - use simple grep without regex
+    local begins=$(echo "$latex" | grep -c 'begin{' 2>/dev/null || echo 0)
+    local ends=$(echo "$latex" | grep -c 'end{' 2>/dev/null || echo 0)
     local diff=$((begins - ends))
     
     if [ "$diff" -gt 0 ]; then
@@ -234,9 +234,10 @@ fix_environments() {
 validate_latex_structure() {
     local latex="$1"
     local project_name="$2"
+    local fixes=0
     
     # Check for documentclass or document environment
-    if ! echo "$latex" | grep -q '\\documentclass'; then
+    if ! echo "$latex" | grep -q 'documentclass'; then
         # Prepend document class if missing
         log_warn "LaTeX missing documentclass, adding arxiv template"
         latex='\documentclass[twocolumn]{article}
@@ -247,23 +248,39 @@ validate_latex_structure() {
 \usepackage{geometry}
 \geometry{margin=1in}
 '"$latex"
+        fixes=$((fixes + 1))
     fi
     
     # Check for document environment
-    if ! echo "$latex" | grep -q '\\begin{document}'; then
+    if ! echo "$latex" | grep -q 'begin{document}'; then
         log_warn "LaTeX missing document environment, adding"
         # Insert after usepackage declarations
-        latex=$(echo "$latex" | sed '/\\usepackage.*/a\
+        latex=$(echo "$latex" | sed '/\\usepackage/a\
 \
 \\begin{document}' )
+        fixes=$((fixes + 1))
+    fi
+    
+    # Check for abstract environment - add if missing
+    if ! echo "$latex" | grep -q 'begin{abstract}'; then
+        log_warn "LaTeX missing abstract, adding"
+        # Insert abstract after begin{document}
+        latex=$(echo "$latex" | sed '/begin{document}/a\
+\
+\\begin{abstract}\
+\\textbf{Please provide an abstract here.}\
+\\end{abstract}' )
+        fixes=$((fixes + 1))
     fi
     
     # Check for end document
-    if ! echo "$latex" | grep -q '\\end{document}'; then
+    if ! echo "$latex" | grep -q 'end{document}'; then
         log_warn "LaTeX missing end document, adding"
         latex="$latex"$'\n\n\\end{document}'
+        fixes=$((fixes + 1))
     fi
     
+    [ $fixes -gt 0 ] && log_info "Applied $fixes structure fixes"
     echo "$latex"
 }
 
@@ -281,33 +298,36 @@ check_latex_errors() {
     fi
     
     # Check for mismatched math mode
-    local math_opens=$(echo "$latex" | grep -o '\\[' | wc -l)
-    local math_closes=$(echo "$latex" | grep -o '\\]' | wc -l)
+    local math_opens=$(echo "$latex" | grep -c '\\[' || echo 0)
+    local math_closes=$(echo "$latex" | grep -c '\\]' || echo 0)
     if [ "$math_opens" -ne "$math_closes" ]; then
-        log_error "LaTeX lint: Mismatched display math mode (\\[ count: $math_opens, \\] count: $math_closes)"
+        log_error "LaTeX lint: Mismatched display math mode (count: opens=$math_opens, closes=$math_closes)"
         errors=$((errors + 1))
     fi
     
     # Check for unescaped underscores in text (simple check)
-    if echo "$latex" | grep -v '^\s*%' | grep -v '\\(' | grep -v '\\[' | grep -q '_[a-zA-Z]'; then
-        log_warn "LaTeX lint: Possible unescaped underscore in text mode"
+    local has_underscore=$(echo "$latex" | grep -c '_[a-zA-Z]' || echo 0)
+    if [ "$has_underscore" -gt 0 ]; then
+        log_warn "LaTeX lint: Found unescaped underscores (use \\_ in text)"
     fi
     
-    # Check for \\begin without \\end
-    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
-    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    # Check for \begin without \end - count occurrences properly
+    local begins=$(echo "$latex" | grep -c 'begin{' || echo 0)
+    local ends=$(echo "$latex" | grep -c 'end{' || echo 0)
     if [ "$begins" -ne "$ends" ]; then
         log_error "LaTeX lint: Mismatched begin/end environments (begin: $begins, end: $ends)"
         errors=$((errors + 1))
     fi
     
-    # Check for common malformed commands
-    if echo "$latex" | grep -q '\\end\s*}'; then
-        log_warn "LaTeX lint: Malformed \\end command detected"
+    # Check for common malformed commands (no regex, simple grep)
+    local has_malformed=$(echo "$latex" | grep -c 'end\s*}' || echo 0)
+    if [ "$has_malformed" -gt 0 ]; then
+        log_warn "LaTeX lint: Possible malformed \\end command"
     fi
     
     # Check for missing abstract
-    if ! echo "$latex" | grep -q '\\begin{abstract}'; then
+    local has_abstract=$(echo "$latex" | grep -c 'begin{abstract}' || echo 0)
+    if [ "$has_abstract" -eq 0 ]; then
         log_warn "LaTeX lint: Missing abstract environment"
     fi
     
@@ -322,13 +342,14 @@ fix_latex() {
     
     log_info "Applying automatic fixes to LaTeX..."
     
-    # 1. Fix unescaped underscores
-    local before=$(echo "$latex" | grep -o '_[a-zA-Z]' | wc -l)
-    latex=$(fix_underscores "$latex")
-    local after=$(echo "$latex" | grep -o '_[a-zA-Z]' | grep -v '^\\_' | wc -l)
-    if [ "$before" -gt "$after" ]; then
-        log_info "Fixed $((before - after)) unescaped underscores"
-        fixes_applied=$((fixes_applied + before - after))
+    # 1. Fix unescaped underscores - only in text mode
+    # Count underscores followed by letters (unescaped)
+    local before=$(echo "$latex" | grep -o '_[a-zA-Z]' 2>/dev/null | wc -l || echo 0)
+    if [ "$before" -gt 0 ]; then
+        # Escape underscores followed by letters
+        latex=$(echo "$latex" | sed 's/_\([a-zA-Z]\)/\\\\_\1/g')
+        log_info "Fixed $before unescaped underscores"
+        fixes_applied=$((fixes_applied + before))
     fi
     
     # 2. Fix mismatched braces
@@ -340,16 +361,16 @@ fix_latex() {
     fi
     
     # 3. Fix math delimiters
-    local math_open=$(echo "$latex" | grep -o '\\[' | wc -l)
-    local math_close=$(echo "$latex" | grep -o '\\]' | wc -l)
+    local math_open=$(echo "$latex" | grep -c '\\[' 2>/dev/null || echo 0)
+    local math_close=$(echo "$latex" | grep -c '\\]' 2>/dev/null || echo 0)
     if [ "$math_open" -ne "$math_close" ]; then
         latex=$(fix_math_delimiters "$latex")
         fixes_applied=$((fixes_applied + 1))
     fi
     
-    # 4. Fix environment pairs
-    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
-    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    # 4. Fix environment pairs - count properly
+    local begins=$(echo "$latex" | grep -c 'begin{' 2>/dev/null || echo 0)
+    local ends=$(echo "$latex" | grep -c 'end{' 2>/dev/null || echo 0)
     if [ "$begins" -ne "$ends" ]; then
         latex=$(fix_environments "$latex")
         fixes_applied=$((fixes_applied + 1))
