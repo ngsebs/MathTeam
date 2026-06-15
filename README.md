@@ -453,6 +453,19 @@ The project is self-contained with all necessary agent configurations:
          └─► FAILED ─► Fix (loop 1-3) ─────┘
          │
          ▼
+5.1 Both Mathematicians analyze results
+   - Validate code relevance to theorems/proofs
+   - If shallow: enter additional coding loop
+         │
+         ▼
+5.2 Senior Mathematician compiles LaTeX
+   - Publication-ready article for Arxiv
+         │
+         ▼
+5.5 Project Owner reviews for publication
+   - Approve / Request Enhancements / Reject
+         │
+         ▼
 6. Supervisor compiles final summary
 ```
 
