@@ -48,6 +48,10 @@ log_error() {
     log "${RED}[ERROR]${NC} $1"
 }
 
+log_success() {
+    log "${GREEN}[SUCCESS]${NC} $1"
+}
+
 # Call Ollama API for LLM inference
 # Safe write function - handles special characters in content
 safe_write() {
@@ -125,7 +129,7 @@ call_ollama() {
 }
 
 # ================================================================================
-# LaTeX Linting and Validation Functions
+# LaTeX Linting, Validation, and Fix Functions
 # ================================================================================
 
 # Extract LaTeX content from markdown code blocks
@@ -145,6 +149,87 @@ extract_latex_from_response() {
     fi
 }
 
+# Fix unescaped underscores in text mode (outside math)
+fix_underscores() {
+    local latex="$1"
+    
+    # This is tricky - we need to be careful not to break math mode
+    # Strategy: escape underscores that are NOT inside \(...\) or \[...\] or $...$
+    
+    # Simple approach: escape underscores followed by letters (common case)
+    # This won't catch all cases but handles most
+    latex=$(echo "$latex" | sed 's/_[a-zA-Z]/\\_&/g')
+    latex=$(echo "$latex" | sed 's/\\_/_/g')  # Fix double escaping
+    
+    echo "$latex"
+}
+
+# Fix mismatched braces by adding missing closing braces
+fix_braces() {
+    local latex="$1"
+    local open_braces=$(echo "$latex" | grep -o '{' | wc -l)
+    local close_braces=$(echo "$latex" | grep -o '}' | wc -l)
+    local diff=$((open_braces - close_braces))
+    
+    if [ "$diff" -gt 0 ]; then
+        log_warn "Adding $diff missing closing braces"
+        # Add closing braces at the end
+        for i in $(seq 1 $diff); do
+            latex="$latex }"
+        done
+    elif [ "$diff" -lt 0 ]; then
+        log_warn "Removing $((-diff)) extra closing braces"
+        # Remove extra closing braces from end
+        for i in $(seq 1 $((-diff))); do
+            latex=$(echo "$latex" | sed 's/}$//')
+        done
+    fi
+    
+    echo "$latex"
+}
+
+# Fix mismatched display math delimiters
+fix_math_delimiters() {
+    local latex="$1"
+    local math_opens=$(echo "$latex" | grep -o '\\[' | wc -l)
+    local math_closes=$(echo "$latex" | grep -o '\\]' | wc -l)
+    
+    if [ "$math_opens" -gt "$math_closes" ]; then
+        local diff=$((math_opens - math_closes))
+        log_warn "Adding $diff missing \\] delimiters"
+        for i in $(seq 1 $diff); do
+            latex="$latex"$'\n\]'
+        done
+    elif [ "$math_closes" -gt "$math_opens" ]; then
+        local diff=$((math_closes - math_opens))
+        log_warn "Removing $diff extra \\] delimiters"
+        for i in $(seq 1 $diff); do
+            latex=$(echo "$latex" | sed 's/\\]$//')
+        done
+    fi
+    
+    echo "$latex"
+}
+
+# Fix mismatched environment pairs
+fix_environments() {
+    local latex="$1"
+    
+    # Count environments
+    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
+    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    local diff=$((begins - ends))
+    
+    if [ "$diff" -gt 0 ]; then
+        log_warn "Adding $diff missing \\end{} commands"
+        for i in $(seq 1 $diff); do
+            latex="$latex"$'\n\\end{document}'
+        done
+    fi
+    
+    echo "$latex"
+}
+
 # Validate and fix basic LaTeX structure
 validate_latex_structure() {
     local latex="$1"
@@ -159,14 +244,15 @@ validate_latex_structure() {
 \usepackage{amsmath,amsthm,amssymb}
 \usepackage{graphicx}
 \usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
 '"$latex"
     fi
     
     # Check for document environment
     if ! echo "$latex" | grep -q '\\begin{document}'; then
         log_warn "LaTeX missing document environment, adding"
-        # Find where to insert \begin{document}
-        # Usually after \documentclass and \usepackage declarations
+        # Insert after usepackage declarations
         latex=$(echo "$latex" | sed '/\\usepackage.*/a\
 \
 \\begin{document}' )
@@ -178,20 +264,10 @@ validate_latex_structure() {
         latex="$latex"$'\n\n\\end{document}'
     fi
     
-    # Fix common issues
-    
-    # 1. Fix unescaped underscores in text (not math mode)
-    # This is complex, so we just warn about it
-    
-    # 2. Fix missing braces in commands
-    # Add space after commands that need arguments
-    
-    # 3. Ensure theorem environments are properly closed
-    
     echo "$latex"
 }
 
-# Check for common LaTeX errors
+# Check for common LaTeX errors and return error count
 check_latex_errors() {
     local latex="$1"
     local errors=0
@@ -230,28 +306,132 @@ check_latex_errors() {
         log_warn "LaTeX lint: Malformed \\end command detected"
     fi
     
+    # Check for missing abstract
+    if ! echo "$latex" | grep -q '\\begin{abstract}'; then
+        log_warn "LaTeX lint: Missing abstract environment"
+    fi
+    
     return $errors
 }
 
-# Process and validate LaTeX for a project
+# Full LaTeX validation and auto-fix pipeline
+fix_latex() {
+    local latex="$1"
+    local project_name="$2"
+    local fixes_applied=0
+    
+    log_info "Applying automatic fixes to LaTeX..."
+    
+    # 1. Fix unescaped underscores
+    local before=$(echo "$latex" | grep -o '_[a-zA-Z]' | wc -l)
+    latex=$(fix_underscores "$latex")
+    local after=$(echo "$latex" | grep -o '_[a-zA-Z]' | grep -v '^\\_' | wc -l)
+    if [ "$before" -gt "$after" ]; then
+        log_info "Fixed $((before - after)) unescaped underscores"
+        fixes_applied=$((fixes_applied + before - after))
+    fi
+    
+    # 2. Fix mismatched braces
+    local open=$(echo "$latex" | grep -o '{' | wc -l)
+    local close=$(echo "$latex" | grep -o '}' | wc -l)
+    if [ "$open" -ne "$close" ]; then
+        latex=$(fix_braces "$latex")
+        fixes_applied=$((fixes_applied + 1))
+    fi
+    
+    # 3. Fix math delimiters
+    local math_open=$(echo "$latex" | grep -o '\\[' | wc -l)
+    local math_close=$(echo "$latex" | grep -o '\\]' | wc -l)
+    if [ "$math_open" -ne "$math_close" ]; then
+        latex=$(fix_math_delimiters "$latex")
+        fixes_applied=$((fixes_applied + 1))
+    fi
+    
+    # 4. Fix environment pairs
+    local begins=$(echo "$latex" | grep -o '\\begin{' | wc -l)
+    local ends=$(echo "$latex" | grep -o '\\end{' | wc -l)
+    if [ "$begins" -ne "$ends" ]; then
+        latex=$(fix_environments "$latex")
+        fixes_applied=$((fixes_applied + 1))
+    fi
+    
+    # 5. Ensure valid structure
+    latex=$(validate_latex_structure "$latex" "$project_name")
+    
+    echo "$latex"
+    return $fixes_applied
+}
+
+# Process and validate LaTeX for a project with retry loop
 process_latex() {
     local project_name="$1"
     local raw_latex="$2"
     local output_file="$3"
+    local theorems_content="$4"
+    local review_content="$5"
     
-    log_info "Processing and validating LaTeX for $project_name..."
+    local max_retries=3
+    local retry_count=0
+    local latex=""
+    local errors=0
     
-    # Extract LaTeX from response
-    local latex=$(extract_latex_from_response "$raw_latex")
+    log_info "Starting LaTeX processing and validation for $project_name..."
     
-    # Validate and fix structure
-    latex=$(validate_latex_structure "$latex" "$project_name")
+    while [ $retry_count -lt $max_retries ]; do
+        retry_count=$((retry_count + 1))
+        log_info "LaTeX validation attempt $retry_count of $max_retries"
+        
+        # Extract LaTeX from response (only on first attempt)
+        if [ -z "$latex" ]; then
+            latex=$(extract_latex_from_response "$raw_latex")
+        fi
+        
+        # Validate and fix structure
+        latex=$(validate_latex_structure "$latex" "$project_name")
+        
+        # Apply automatic fixes
+        latex=$(fix_latex "$latex" "$project_name")
+        
+        # Check for errors
+        errors=0
+        check_latex_errors "$latex" || errors=$?
+        
+        if [ $errors -eq 0 ]; then
+            log_success "LaTeX validation passed on attempt $retry_count"
+            break
+        else
+            log_warn "LaTeX has $errors error(s), attempting regeneration..."
+            
+            if [ $retry_count -lt $max_retries ]; then
+                # Try to regenerate LaTeX with fixes
+                log_info "Requesting regenerated LaTeX with corrections..."
+                
+                local fix_prompt="You are a Senior Mathematician. Fix the following LaTeX code which has errors.
+
+Previous LaTeX (with errors):
+$latex
+
+Common errors to fix:
+1. Unescaped underscores in text (use \\_ instead of _)
+2. Mismatched braces { }
+3. Mismatched display math delimiters \\[ and \\]
+4. Mismatched begin/end environments
+5. Missing documentclass or document environment
+
+Please generate corrected LaTeX code. Output ONLY the LaTeX code in a markdown code block starting with \`\`\`latex"
+
+                latex=$(call_ollama "$model" "$fix_prompt")
+            fi
+        fi
+    done
     
-    # Check for errors
-    if check_latex_errors "$latex"; then
-        log_info "LaTeX validation passed"
-    else
-        log_warn "LaTeX has validation issues, attempting to fix..."
+    # Final validation
+    errors=0
+    check_latex_errors "$latex" || errors=$?
+    
+    if [ $errors -gt 0 ]; then
+        log_error "LaTeX still has $errors error(s) after $max_retries attempts"
+        log_warn "Writing LaTeX anyway - manual review recommended"
     fi
     
     # Write to output file
@@ -259,8 +439,8 @@ process_latex() {
     
     log_info "LaTeX written to: $output_file"
     
-    # Return success
-    return 0
+    # Return error count
+    return $errors
 }
 
 # Check Ollama availability with retries
@@ -1279,13 +1459,20 @@ IMPORTANT: Output ONLY the LaTeX code in a markdown code block. Start with \`\`\
 
     local raw_latex=$(call_ollama "$model" "$latex_prompt")
 
-    # Process and validate LaTeX using the linting functions
+    # Process and validate LaTeX using the linting functions with retry loop
     mkdir -p "$project_dir/publication"
-    process_latex "$project_name" "$raw_latex" "$project_dir/publication/article.tex"
-
-    log_info "LaTeX article compiled and validated: $project_dir/publication/article.tex"
+    local latex_errors=0
+    process_latex "$project_name" "$raw_latex" "$project_dir/publication/article.tex" "$latex_theorems" "$latex_review" || latex_errors=$?
+    
+    if [ $latex_errors -gt 0 ]; then
+        log_warn "LaTeX has $latex_errors error(s) - manual review recommended"
+        update_progress "$project_name" "Senior Mathematician" "LaTeX compiled with $latex_errors error(s)"
+    else
+        log_info "LaTeX article compiled and validated: $project_dir/publication/article.tex"
+        update_progress "$project_name" "Senior Mathematician" "LaTeX compilation complete"
+    fi
+    
     update_task_status "$project_name" "TASK-008" "Completed"
-    update_progress "$project_name" "Senior Mathematician" "LaTeX compilation complete"
 
 
     # ================================================================================
